@@ -129,6 +129,9 @@ function toolResultBody(result: ToolResultMessage, ctx?: MarkdownContext): { hea
 		const input = problemInputForConclude(ctx.messages, result.toolCallId);
 		const solution = typeof input?.modelSolution === "string" && input.modelSolution.trim() ? input.modelSolution.trim() : undefined;
 		if (solution !== undefined) body.push(`> **Model solution**\n>\n> ${solution.replace(/\n/g, "\n> ")}`);
+		// Improvise (owner, 2026-10-30): the committed criteria are the reveal.
+		const criteria = typeof input?.criteria === "string" && input.criteria.trim() ? input.criteria.trim() : undefined;
+		if (solution === undefined && criteria !== undefined) body.push(`> **Criteria**\n>\n> ${criteria.replace(/\n/g, "\n> ")}`);
 		return { heading: "Concluded", body };
 	}
 

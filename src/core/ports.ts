@@ -19,6 +19,7 @@ import type {
 	JobKind,
 	JobRecord,
 	ExtractionRunUsage,
+	ImprovisationJudgment,
 	PlanTree,
 	Position,
 	CoverageEntry,
@@ -32,9 +33,9 @@ import type { UserSettings } from "./settings.ts";
 
 export interface ChatStore {
 	/** Create a session record (persisted immediately). */
-	/** Create a session record; kind "practice" marks a practice session
-	 *  (absent = teach, the default). */
-	createChat(title: string, kind?: "practice"): ChatRecord;
+	/** Create a session record; kind "practice" / "improvise" marks a
+	 *  practice / improvisation session (absent = teach, the default). */
+	createChat(title: string, kind?: "practice" | "improvise"): ChatRecord;
 	/** The full record, or null if unknown id / corrupt file. */
 	getChat(id: string): ChatRecord | null;
 	/** All sessions, newest activity first (the sidebar's list view). */
@@ -70,8 +71,9 @@ export interface ChatStore {
 // chains; edges are a DERIVED view (core/graph.ts) and never touch this
 // seam. Reads return the raw append-order lines; merging chain assertions
 // by (premises, conclusion) is DERIVED in core/graph.ts — the store never
-// decides. The extraction pipeline is the sole writer; this read surface
-// stays.
+// decides. The extraction pipeline is the sole writer of nodes and chains;
+// improvisation judgments are written by the improvise tools alone
+// (tools/improvise.ts, 2026-10-30). This read surface stays.
 
 export interface GraphStore {
 	/** Append one GraphNode (ids are unique — no merging needed). */
@@ -92,6 +94,12 @@ export interface GraphStore {
 	 *  checkpoint — "uncovered" is derived from these, never tracked. */
 	appendCoverage(entry: CoverageEntry): void;
 	readCoverage(): CoverageEntry[];
+
+	/** Improvisation judgments (cognitive-gym reorg, owner 2026-10-30):
+	 *  append-only; a contest's re-examination is a NEW line naming what
+	 *  it revises. Standings derive in core/improvisation.ts. */
+	appendImprovisation(judgment: ImprovisationJudgment): void;
+	readImprovisations(): ImprovisationJudgment[];
 
 	/** Append one cluster-naming run's usage (graph-global money channel) —
 	 *  idempotent per startedAt. */
@@ -114,7 +122,7 @@ export interface GraphStore {
 
 	/** THE DESTRUCTIVE SEAM (session-deletion wave 6, owner 2026-09-22 —
 	 *  the first non-append operation on these ledgers): atomically
-	 *  replace the full contents of any subset of the six rewritable
+	 *  replace the full contents of any subset of the five rewritable
 	 *  ledgers. Each provided array is written to a temp file and renamed
 	 *  over the ledger (crash-safe: a torn write never replaces the
 	 *  original); absent keys leave their ledger untouched. The pure
@@ -125,6 +133,7 @@ export interface GraphStore {
 		chains?: GraphChain[];
 		coverage?: CoverageEntry[];
 		checkpoints?: SessionCheckpoint[];
+		improvisations?: ImprovisationJudgment[];
 	}): void;
 }
 

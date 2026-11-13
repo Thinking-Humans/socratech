@@ -34,16 +34,24 @@ export function KnowledgeSummary({
 	chains,
 	teachSessions,
 	practiceSessions,
+	improviseSessions = 0,
 	importedNotes,
 }: {
 	propositions: number;
 	chains: number;
 	teachSessions: number;
 	practiceSessions: number;
+	/** Improvisation sessions (2026-10-30) — their row shows once any exist. */
+	improviseSessions?: number;
 	importedNotes: number;
 }) {
 	const empty =
-		propositions === 0 && chains === 0 && teachSessions === 0 && practiceSessions === 0 && importedNotes === 0;
+		propositions === 0 &&
+		chains === 0 &&
+		teachSessions === 0 &&
+		practiceSessions === 0 &&
+		improviseSessions === 0 &&
+		importedNotes === 0;
 	return (
 		<div data-testid="knowledge-summary" className="flex flex-col items-center text-center">
 			{/* Own-line law (owner, 2026-10-06): every count sits on its own
@@ -66,6 +74,11 @@ export function KnowledgeSummary({
 				<p className="font-ui text-sm text-muted-foreground">
 					{practiceSessions} {practiceSessions === 1 ? "practice session" : "practice sessions"}
 				</p>
+				{improviseSessions > 0 && (
+					<p className="font-ui text-sm text-muted-foreground">
+						{improviseSessions} {improviseSessions === 1 ? "improvisation session" : "improvisation sessions"}
+					</p>
+				)}
 			</div>
 			<div className="h-4" aria-hidden="true" />
 			<p className="font-ui text-sm text-muted-foreground">
@@ -129,6 +142,7 @@ export function MinimalHome({
 
 	const teachSessions = chats.filter((c) => c.kind === "teach").length;
 	const practiceSessions = chats.filter((c) => c.kind === "practice").length;
+	const improviseSessions = chats.filter((c) => c.kind === "improvise").length;
 
 	return (
 		<div className="relative h-full">
@@ -151,6 +165,7 @@ export function MinimalHome({
 					chains={snapshot?.chains.length ?? 0}
 					teachSessions={teachSessions}
 					practiceSessions={practiceSessions}
+					improviseSessions={improviseSessions}
 					importedNotes={Object.keys(snapshot?.fileSources ?? {}).length}
 				/>
 			</div>

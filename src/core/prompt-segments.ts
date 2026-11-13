@@ -19,8 +19,9 @@ export const FRAGMENT_RE = /^\d+-[\w.-]+\.md$/;
 /** Which agent's prompt directory to compose. */
 /** Practice (2026-10-04): composes ONLY its own directory — no shared
  *  teaching base, no shared fragments (the doctrine contradicts the
- *  teaching philosophy; its 00-base.md plays the base role). */
-export type PromptAgent = "prober" | "teacher" | "practice";
+ *  teaching philosophy; its 00-base.md plays the base role). Improvise
+ *  (2026-10-30) composes the same way as practice. */
+export type PromptAgent = "prober" | "teacher" | "practice" | "improvise";
 
 /** One segment of one agent's composed prompt. */
 export interface PromptSegmentInfo {
@@ -44,7 +45,7 @@ export interface PromptSegmentInfo {
  *  CURRENT source segment list. */
 export function isValidSegmentPath(segmentPath: string): boolean {
 	if (segmentPath === "system-prompt.md") return true;
-	const m = /^(prober|teacher|practice|shared)\/([\w.-]+\.md)$/.exec(segmentPath);
+	const m = /^(prober|teacher|practice|improvise|shared)\/([\w.-]+\.md)$/.exec(segmentPath);
 	if (!m || m[2] === undefined) return false;
 	return FRAGMENT_RE.test(m[2]);
 }

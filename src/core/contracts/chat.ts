@@ -24,8 +24,18 @@ import type { EmissionStats } from "./graph.ts";
 /** The session's kind (practice sessions, owner 2026-10-04): "teach" is
  *  the default and ABSENT on pre-practice records (no migration — absence
  *  reads as teach); "practice" marks an adaptive-practice session — the
- *  practice agent, its two tools, no extraction, no graph writes. */
-export type ChatKind = "teach" | "practice";
+ *  practice agent, its two tools, no extraction, no graph writes;
+ *  "improvise" (cognitive-gym reorg, owner 2026-10-30) marks an
+ *  improvisation session — practice's problem/conclude flow and dock, its
+ *  own agent and doctrine, no extraction; its ONE graph write is the
+ *  improvisation judgment. */
+export type ChatKind = "teach" | "practice" | "improvise";
+
+/** Kinds that run the problem/conclude loop (pose → thinking field →
+ *  conclude → pause) instead of the prober→teacher lesson. */
+export function isProblemSessionKind(kind: string | undefined): kind is "practice" | "improvise" {
+	return kind === "practice" || kind === "improvise";
+}
 
 export interface ChatRecord {
 	id: string;

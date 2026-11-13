@@ -51,7 +51,7 @@ import { PlanBlock, PlanPopup, latestTree } from "@/components/plan-block";
 import { PlanMarginalia, planExists } from "@/components/plan-window";
 import { MermaidOverlay, SessionMermaidContext } from "@/components/session-overlay";
 import { AbortTurnDialog, type AbortMode } from "@/components/abort-turn-dialog";
-import { ArrowRightIcon, DumbbellIcon, WaypointsIcon } from "lucide-react";
+import { ArrowRightIcon, DumbbellIcon, ShuffleIcon, WaypointsIcon } from "lucide-react";
 import type { PlanBlockData } from "@/src/core";
 import { QuestionDock } from "@/components/question-dock";
 import { SessionFind } from "@/components/session-find";
@@ -228,8 +228,9 @@ export function Chat({
 	initialError?: string;
 	/** The session kind (practice sessions, owner 2026-10-04): practice
 	 *  renders no phase chip (no probe→teach arc applies) and a Practice
-	 *  tag rides the header instead. */
-	kind?: "teach" | "practice";
+	 *  tag rides the header instead. Improvise (owner, 2026-10-30) runs
+	 *  the same problem flow under its own tag. */
+	kind?: "teach" | "practice" | "improvise";
 	initialPrompt?: string;
 	/** A teacher turn is running server-side but attached to no client
 	 * (navigated away mid-turn, returned while in flight). */
@@ -752,7 +753,7 @@ export function Chat({
 	 * has ever been posed (the fresh session's opening turn is owed, not
 	 * the move-on). Enter-on-empty and the Next chip both key on it. */
 	const nextReady =
-		kind === "practice" &&
+		(kind === "practice" || kind === "improvise") &&
 		!pending &&
 		!activeProblem &&
 		!compacting &&
@@ -1372,18 +1373,18 @@ export function Chat({
 					{/* Practice (owner, 2026-10-04): the coverage ring hides —
 				    practice never extracts, so an ever-filling ring with no
 				    run behind it would lie. */}
-					{kind !== "practice" && <CoverageRing chatId={chatId} refreshKey={coverageTick} />}
-					{/* Practice sessions: no phase arc — a quiet Practice tag
-					    instead of the phase chip. */}
-					{kind === "practice" ? (
+					{kind === "teach" && <CoverageRing chatId={chatId} refreshKey={coverageTick} />}
+					{/* Practice/improvise sessions: no phase arc — a quiet kind
+					    tag instead of the phase chip. */}
+					{kind !== "teach" ? (
 						<span
 							data-testid="phase-chip"
-							data-phase="practice"
+							data-phase={kind}
 							aria-hidden="true"
 							className="pointer-events-none flex shrink-0 select-none items-center gap-1 text-xs font-medium uppercase tracking-wide text-muted-foreground"
 						>
-							<DumbbellIcon className="size-3" />
-							Practice
+							{kind === "practice" ? <DumbbellIcon className="size-3" /> : <ShuffleIcon className="size-3" />}
+							{kind === "practice" ? "Practice" : "Improvise"}
 						</span>
 					) : (
 						<PhaseChip phase={phases.at(-1) ?? "probe"} />

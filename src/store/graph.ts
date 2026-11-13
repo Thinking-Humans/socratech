@@ -13,6 +13,10 @@
  *                                      another line; readers merge)
  *   sessions.jsonl  SessionCheckpoint— emission checkpoints (foldedAt)
  *   coverage.jsonl  CoverageEntry    — per-message extraction coverage
+ *   improvisations.jsonl
+ *                   ImprovisationJudgment — one line per judgment (a
+ *                                      contest's re-examination is a new
+ *                                      line naming what it revises)
  *
  * CHAINS-PRIMARY (owner, 2026-09-30): there is NO edges ledger — the edge
  * view (implication nodes + untyped arrows) is derived in core/graph.ts on
@@ -40,12 +44,14 @@ import type {
 	GraphChain,
 	GraphNode,
 	ExtractionRunUsage,
+	ImprovisationJudgment,
 	NotesSource,
 	Position,
 	ProvenancePoint,
 	CoverageEntry,
 	SessionCheckpoint,
 } from "../core/contracts.ts";
+import { IDEA_KINDS, IMPROVISATION_MEDIA, IMPROVISATION_MOVES } from "../core/contracts.ts";
 import type { GraphStore } from "../core/ports.ts";
 
 // ─── JSONL primitives ────────────────────────────────────────────────────────
@@ -94,9 +100,12 @@ const isProvenancePoint = (v: unknown): v is ProvenancePoint =>
 	isRecord(v) && isString(v.chatId) && isString(v.messageId);
 
 
+/** `kind` is optional (absent = proposition); a PRESENT kind must be one
+ *  this build knows — an unknown kind is a foreign shape, skipped. */
 const isGraphNode = (v: unknown): v is GraphNode =>
 	isRecord(v) &&
 	isString(v.id) &&
+	(v.kind === undefined || (IDEA_KINDS as readonly unknown[]).includes(v.kind)) &&
 	isString(v.name) &&
 	isString(v.statement) &&
 	Array.isArray(v.aliases) &&
@@ -125,6 +134,27 @@ const isCheckpoint = (v: unknown): v is SessionCheckpoint =>
 
 const isCoverageEntry = (v: unknown): v is CoverageEntry =>
 	isRecord(v) && isString(v.chatId) && isString(v.fp) && typeof v.tokens === "number" && isString(v.foldedAt);
+
+/** A judgment line: nodeIds ≥ 1, a known move and verdict, a PARSEABLE
+ *  `at` (the standing derivation's clock — an unreadable time would
+ *  silently misorder the ladder, so the line is skipped instead). */
+const isImprovisationJudgment = (v: unknown): v is ImprovisationJudgment =>
+	isRecord(v) &&
+	isString(v.id) &&
+	Array.isArray(v.nodeIds) &&
+	v.nodeIds.length > 0 &&
+	v.nodeIds.every(isString) &&
+	(IMPROVISATION_MOVES as readonly unknown[]).includes(v.move) &&
+	(v.medium === undefined || (IMPROVISATION_MEDIA as readonly unknown[]).includes(v.medium)) &&
+	isString(v.challenge) &&
+	isString(v.attempt) &&
+	(v.verdict === "pass" || v.verdict === "fail") &&
+	isString(v.rationale) &&
+	isProvenancePoint(v.provenance) &&
+	isString(v.at) &&
+	!Number.isNaN(Date.parse(v.at)) &&
+	(v.revises === undefined || isString(v.revises)) &&
+	(v.contest === undefined || isString(v.contest));
 
 // ─── the port implementation ────────────────────────────────────────────────
 
@@ -160,6 +190,13 @@ export const graphStore: GraphStore = {
 	},
 	readCoverage(): CoverageEntry[] {
 		return readValid(LEDGER_FILES.coverage, isCoverageEntry);
+	},
+
+	appendImprovisation(judgment: ImprovisationJudgment): void {
+		appendLine(LEDGER_FILES.improvisations, judgment);
+	},
+	readImprovisations(): ImprovisationJudgment[] {
+		return readValid(LEDGER_FILES.improvisations, isImprovisationJudgment);
 	},
 
 	// ── imported-notes bookkeeping (config.SOURCES_FILE — a JSON map) ──
@@ -204,12 +241,14 @@ export const graphStore: GraphStore = {
 		chains?: GraphChain[];
 		coverage?: CoverageEntry[];
 		checkpoints?: SessionCheckpoint[];
+		improvisations?: ImprovisationJudgment[];
 	}): void {
 		const files = {
 			nodes: LEDGER_FILES.nodes,
 			chains: LEDGER_FILES.chains,
 			coverage: LEDGER_FILES.coverage,
 			checkpoints: LEDGER_FILES.sessions,
+			improvisations: LEDGER_FILES.improvisations,
 		} as const;
 		for (const [key, records] of Object.entries(next) as [keyof typeof files, unknown[]][]) {
 			const file = files[key];

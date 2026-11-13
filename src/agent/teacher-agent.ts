@@ -15,6 +15,7 @@ import {
 	type TeacherToolContext,
 } from "./tools.ts";
 import { practiceTools, type PracticeToolContext } from "./tools/practice.ts";
+import { improviseTools, type ImproviseToolContext } from "./tools/improvise.ts";
 import { healToolRecord, withArgumentHeal } from "./tools/heal.ts";
 import { sendToUserTool } from "./tools/send-to-user.ts";
 import { createReadTool, readTool } from "./tools/read.ts";
@@ -49,9 +50,10 @@ import { usageWasAdmitted } from "./subscription-request-cycle.ts";
  * without ever leaking into the model's prompt.
  */
 
-/** Which agent's prompt directory to compose. Practice (2026-10-04)
- *  composes ONLY its own directory — see prompt-segments.ts. */
-export type AgentKind = "prober" | "teacher" | "practice";
+/** Which agent's prompt directory to compose. Practice (2026-10-04) and
+ *  improvise (2026-10-30) compose ONLY their own directory — see
+ *  prompt-segments.ts. */
+export type AgentKind = "prober" | "teacher" | "practice" | "improvise";
 
 // P2 (2026-09-19): segment discovery + override resolution live in ONE
 // canonical place now — src/store/prompt-overrides.ts (listSourceSegments
@@ -91,6 +93,7 @@ const composedInstructions: Record<AgentKind, string> = {
 	prober: composeInstructions("prober"),
 	teacher: composeInstructions("teacher"),
 	practice: composeInstructions("practice"),
+	improvise: composeInstructions("improvise"),
 };
 
 // Money channel (wave 4): the chat-handler passes a per-turn collector;
@@ -163,7 +166,7 @@ function makeQuestionStopper(kind: AgentKind) {
 			context.message.content
 				.filter((c) => c.type === "toolCall" && c.name !== undefined && (
 					(QUESTION_TOOLS as readonly string[]).includes(c.name) ||
-					(kind === "practice" && c.name === PRACTICE_PROBLEM_TOOL)
+					((kind === "practice" || kind === "improvise") && c.name === PRACTICE_PROBLEM_TOOL)
 				))
 				.map((c) => c.id!),
 		);
@@ -177,10 +180,10 @@ function makeQuestionStopper(kind: AgentKind) {
 }
 
 function baseAgentOptions(kind: AgentKind, opts: AgentBuildOptions, tools: AgentTool<any, any>[]) {
-	// Practice never reaches the role fallback (the handler ALWAYS injects
-	// the session's conversation engine — practice rides the same
+	// Practice/improvise never reach the role fallback (the handler ALWAYS
+	// injects the session's conversation engine — they ride the same
 	// conversation-spec resolution as teaching); the cast keeps AgentKind
-	// ("practice" is not a ModelRole) honest about that.
+	// ("practice"/"improvise" are not ModelRoles) honest about that.
 	const engine = opts.engine ?? piEngineFor(kind as "prober" | "teacher");
 	const stopper = makeQuestionStopper(kind);
 	const systemPrompt = opts.promptSwitches
@@ -340,8 +343,21 @@ export function createPracticeAgent(ctx: PracticeToolContext, opts: AgentBuildOp
 	return baseAgentOptions("practice", opts, Object.values(tools));
 }
 
+/**
+ * The IMPROVISER (improvise sessions, owner design 2026-10-30): practice's
+ * shape — built from turn 1, problem/conclude, the same stop law — with
+ * its own registry (tools/improvise.ts: improvisation challenges judged
+ * pass/fail into the graph's improvisation ledger, plus rejudge for
+ * contests) and its own doctrine (prompts/improvise/).
+ */
+export function createImproviseAgent(ctx: ImproviseToolContext, opts: AgentBuildOptions = {}) {
+	const tools = opts.tools ?? improviseTools(ctx);
+	return baseAgentOptions("improvise", opts, Object.values(tools));
+}
+
 export type ProberAgent = ReturnType<typeof createProberAgent>;
 export type TeacherAgent = ReturnType<typeof createTeacherAgent>;
 export type PracticeAgent = ReturnType<typeof createPracticeAgent>;
-export type TeachingAgent = ProberAgent | TeacherAgent | PracticeAgent;
+export type ImproviseAgent = ReturnType<typeof createImproviseAgent>;
+export type TeachingAgent = ProberAgent | TeacherAgent | PracticeAgent | ImproviseAgent;
 

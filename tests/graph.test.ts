@@ -651,6 +651,58 @@ describe("graph ledger store", () => {
 		assert.ok(merged.aliases.includes("Phrasing m2"), "later phrasings join the aliases");
 		assert.deepEqual(merged.provenance.map((p) => p.messageId), ["m1", "m2"]);
 	});
+
+	it("round-trips an idea kind; the first line defines it; an unknown kind is skipped", () => {
+		const line = (kind: string | undefined, msgId: string) =>
+			JSON.stringify({
+				id: "n_kindtest",
+				...(kind === undefined ? {} : { kind }),
+				name: "Kind test",
+				statement: `Notice the breath ${msgId}`,
+				aliases: [],
+				createdAt: "2026-10-30T00:00:00.000Z",
+				provenance: [{ chatId: "chat_c", messageId: msgId }],
+			});
+		fs.appendFileSync(
+			LEDGER_FILES.nodes,
+			`${line("awareness-experiment", "m1")}\n${line(undefined, "m2")}\n${line("musical-idea", "m3")}\n`,
+			"utf-8",
+		);
+		const lines = graphStore.readNodes().filter((n) => n.id === "n_kindtest");
+		assert.equal(lines.length, 2, "the line with a kind this build does not know is skipped");
+		const merged = getGraph(graphStore).nodes.find((n) => n.id === "n_kindtest")!;
+		assert.equal(merged.kind, "awareness-experiment", "the FIRST line defines the kind");
+	});
+
+	it("round-trips improvisation judgments and skips malformed ones (strict reads)", () => {
+		const judgment = {
+			id: "impr_storetest",
+			nodeIds: ["n_storetest"],
+			move: "variant",
+			challenge: "Change one premise.",
+			attempt: "What if it were cold?",
+			verdict: "pass",
+			rationale: "A genuine variant.",
+			provenance: { chatId: "chat_c", messageId: "m9" },
+			at: "2026-10-30T00:00:00.000Z",
+		} as const;
+		graphStore.appendImprovisation({ ...judgment, nodeIds: [...judgment.nodeIds] });
+		const bad = (over: Record<string, unknown>) => JSON.stringify({ ...judgment, id: "impr_bad", ...over });
+		fs.appendFileSync(
+			LEDGER_FILES.improvisations,
+			[
+				"{torn",
+				bad({ nodeIds: [] }),
+				bad({ move: "remix" }),
+				bad({ verdict: "maybe" }),
+				bad({ at: "not a time" }),
+				bad({ provenance: [{ chatId: "chat_c", messageId: "m9" }] }),
+			].join("\n") + "\n",
+			"utf-8",
+		);
+		const read = graphStore.readImprovisations().filter((j) => j.id.startsWith("impr_"));
+		assert.deepEqual(read, [judgment]);
+	});
 });
 
 // ─── session deletion (wave 6 — the first destructive ledger operation) ─────
@@ -1144,5 +1196,84 @@ describe("deriveView (the argument's geometry)", () => {
 			chains: [chain("arg_ab", ["a", "b"], "c"), chain("arg_ac", ["a"], "c")],
 		});
 		assert.deepEqual(view.impLinks, [{ id: "arg_ab", premises: ["a", "b"], conclusion: "c" }]);
+	});
+});
+
+// ─── improvisation judgments under deletion (cognitive-gym reorg, 2026-10-30)
+
+describe("improvisation judgments under deletion", () => {
+	const at = "2026-10-30T00:00:00.000Z";
+	const judgment = (id: string, nodeIds: string[], chatId: string) => ({
+		id,
+		nodeIds,
+		move: "context-shift" as const,
+		challenge: "c",
+		attempt: "a",
+		verdict: "pass" as const,
+		rationale: "r",
+		provenance: { chatId, messageId: "m1" },
+		at,
+	});
+	const node = (id: string, chatId: string) => ({
+		id,
+		name: id,
+		statement: `${id} statement`,
+		aliases: [],
+		createdAt: at,
+		provenance: [{ chatId, messageId: "m1" }],
+	});
+	function reset() {
+		graphStore.rewriteLedgers({ nodes: [], chains: [], coverage: [], checkpoints: [], improvisations: [] });
+		graphStore.writePositions({});
+	}
+
+	it("delete-nodes purges the chat's judgments even when it minted no nodes (an improvise session)", () => {
+		reset();
+		graphStore.appendNode(node("n_idea", "chat_teach"));
+		graphStore.appendImprovisation(judgment("impr_gym", ["n_idea"], "chat_gym"));
+		graphStore.appendImprovisation(judgment("impr_other", ["n_idea"], "chat_other"));
+		deleteChatTraces(graphStore, "chat_gym", "delete-nodes");
+		assert.deepEqual(graphStore.readImprovisations().map((j) => j.id), ["impr_other"]);
+		assert.equal(graphStore.readNodes().length, 1, "the idea itself is untouched");
+	});
+
+	it("preserve-graph keeps the chat's judgments", () => {
+		reset();
+		graphStore.appendNode(node("n_idea", "chat_teach"));
+		graphStore.appendImprovisation(judgment("impr_gym", ["n_idea"], "chat_gym"));
+		deleteChatTraces(graphStore, "chat_gym", "preserve-graph");
+		assert.deepEqual(graphStore.readImprovisations().map((j) => j.id), ["impr_gym"]);
+	});
+
+	it("delete-nodes strips the ids of nodes that died from other chats' judgments", () => {
+		reset();
+		graphStore.appendNode(node("n_orphan", "chat_teach"));
+		graphStore.appendNode(node("n_shared", "chat_teach"));
+		graphStore.appendNode(node("n_shared", "chat_other"));
+		graphStore.appendImprovisation(judgment("impr_both", ["n_orphan", "n_shared"], "chat_gym"));
+		graphStore.appendImprovisation(judgment("impr_orphan", ["n_orphan"], "chat_gym"));
+		deleteChatTraces(graphStore, "chat_teach", "delete-nodes");
+		assert.deepEqual(
+			graphStore.readImprovisations().map((j) => [j.id, j.nodeIds]),
+			[["impr_both", ["n_shared"]]],
+			"the dead node leaves every judgment; a judgment naming no node dies",
+		);
+	});
+
+	it("node full death strips its id; an untouched judgment ledger is not rewritten", () => {
+		reset();
+		graphStore.appendNode(node("n_dead", "chat_teach"));
+		graphStore.appendNode(node("n_keep", "chat_teach"));
+		graphStore.appendImprovisation(judgment("impr_dead", ["n_dead"], "chat_gym"));
+		graphStore.appendImprovisation(judgment("impr_mixed", ["n_dead", "n_keep"], "chat_gym"));
+		deleteNodeTraces(graphStore, "n_dead");
+		assert.deepEqual(graphStore.readImprovisations().map((j) => [j.id, j.nodeIds]), [["impr_mixed", ["n_keep"]]]);
+
+		graphStore.appendNode(node("n_unjudged", "chat_teach"));
+		const before = fs.statSync(LEDGER_FILES.improvisations).mtimeMs;
+		const bytes = fs.readFileSync(LEDGER_FILES.improvisations, "utf-8");
+		deleteNodeTraces(graphStore, "n_unjudged");
+		assert.equal(fs.readFileSync(LEDGER_FILES.improvisations, "utf-8"), bytes);
+		assert.equal(fs.statSync(LEDGER_FILES.improvisations).mtimeMs, before);
 	});
 });

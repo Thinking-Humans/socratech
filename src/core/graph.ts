@@ -2,7 +2,9 @@
  * The knowledge graph: merger (the deterministic final stage of the
  * extraction pipeline — vision §1 construction) + derivation (reads).
  *
- * The extraction pipeline is the SOLE graph writer, tree-blind and post-hoc
+ * The extraction pipeline is the SOLE writer of nodes and chains (the
+ * improvise tools write only improvisation judgments — 2026-10-30),
+ * tree-blind and post-hoc
  * (2026-09-27 cleanup — clear separation of work):
  *
  *   extractor (LLM)  → SessionFindings: the raw reasoning chains —
@@ -196,6 +198,9 @@ export function mergeFindings(
 		} else {
 			const node: GraphNode = {
 				id: newGraphNodeId(),
+				// The idea's kind rides the CREATE line only (first line defines;
+				// absent = proposition — every extractor finding).
+				...(p.kind !== undefined ? { kind: p.kind } : {}),
 				name: p.name,
 				statement: p.statement,
 				aliases: [...p.aliases],
@@ -395,7 +400,7 @@ export interface DerivedGraph {
 
 /**
  * The whole graph from the ledgers. Node LINES may repeat an id (link-
- * appends): the FIRST line defines name/statement/createdAt; later
+ * appends): the FIRST line defines name/kind/statement/createdAt; later
  * lines' statements and aliases join `aliases`, provenance unions — the
  * name never changes after creation. Chain LINES are assertions, merged
  * by (premises, conclusion) with unioned provenance; the first line's

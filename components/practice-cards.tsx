@@ -14,6 +14,8 @@ import type { ArtifactPartProps } from "@/src/core";
  * - ConcludeCard — the conclusion: outcome badge + verdict + the reveal
  *   (the committed solution, shown when the problem ended). A dismissal
  *   synthesis (outcome:"dismissed") renders as one muted line.
+ * - RejudgeCard — improvise's contest (2026-10-30): the changed verdict
+ *   and why, in the conclude card's register.
  * - ThinkingCard — the learner's own submission, user-side: the register
  *   is the two buttons' (Nudge = working trace, Commit = answer). The
  *   UNIFIED ThinkingBlock (owner round 2026-10-05): the quiz quote-block
@@ -60,11 +62,14 @@ export function ProblemCard({ part }: ArtifactPartProps) {
 	// statement — same container + eyebrow discipline as the answered card
 	// and the dock (which mirrors this in Slice D). The commitment never
 	// renders — only the call's statement.
-	const input = (part.input ?? {}) as { statement?: string };
+	// Improvise's pose (2026-10-30) carries a move — it reads "Challenge".
+	const input = (part.input ?? {}) as { statement?: string; move?: unknown };
 	const statement = typeof input.statement === "string" ? input.statement : "";
 	return (
 		<div data-testid="problem-card" className="lh-card-enter my-1 rounded-xl border bg-card p-4">
-			<div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Problem</div>
+			<div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+				{typeof input.move === "string" ? "Challenge" : "Problem"}
+			</div>
 			<div className="lh-prose text-[15px]">
 				<ToolContentResponse>{statement}</ToolContentResponse>
 			</div>
@@ -78,6 +83,9 @@ const OUTCOME_LABEL: Record<string, string> = {
 	movedOn: "Moved on",
 	surrendered: "Surrendered",
 	dismissed: "Dismissed",
+	// Improvise (2026-10-30).
+	pass: "Pass",
+	fail: "Fail",
 };
 
 /* The outcome chips (owner round 3, 2026-10-05): the EXACT register of the
@@ -91,6 +99,8 @@ const OUTCOME_CHIP: Record<string, string> = {
 	movedOn: "bg-muted text-muted-foreground",
 	surrendered: "bg-red-500/15 text-red-500",
 	dismissed: "bg-muted text-muted-foreground",
+	pass: "bg-green-500/15 text-green-500",
+	fail: "bg-red-500/15 text-red-500",
 };
 
 export function ConcludeCard({ part }: ArtifactPartProps) {
@@ -105,6 +115,9 @@ export function ConcludeCard({ part }: ArtifactPartProps) {
 	const verdict = typeof input.verdict === "string" ? input.verdict : "";
 	const reveal =
 		typeof part.reveal === "string" ? part.reveal : typeof input.solutionReveal === "string" ? input.solutionReveal : "";
+	const problemInput = (part.problemInput ?? {}) as { mode?: unknown; target?: unknown; move?: unknown; medium?: unknown; criteria?: unknown };
+	// Improvise (2026-10-30): the committed criteria are the reveal.
+	const revealLabel = typeof problemInput.criteria === "string" ? "Criteria" : "Model solution";
 
 	// The dismissal synthesis: no verdict, no reveal — one muted line (the
 	// learner clicked; the record needs only the fact).
@@ -142,17 +155,38 @@ export function ConcludeCard({ part }: ArtifactPartProps) {
 				<>
 					<div className="my-3 border-t" />
 					<div>
-						<div className="mb-0.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">Model solution</div>
+						<div className="mb-0.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">{revealLabel}</div>
 						<div className="lh-prose text-[15px]">
 							<ToolContentResponse>{reveal}</ToolContentResponse>
 						</div>
 					</div>
 				</>
 			)}
-			<MetadataPopover
-				concludeInput={input}
-				problemInput={(part.problemInput ?? {}) as { mode?: unknown; target?: unknown }}
-			/>
+			<MetadataPopover concludeInput={input} problemInput={problemInput} />
+		</div>
+	);
+}
+
+export function RejudgeCard({ part }: ArtifactPartProps) {
+	// The contest's outcome (improvise, 2026-10-30): the re-examined verdict
+	// (upheld or changed) in the conclude card's chip register, the
+	// rationale below it.
+	const input = (part.input ?? {}) as { verdict?: string; rationale?: string };
+	const verdict = typeof input.verdict === "string" ? input.verdict : "";
+	const rationale = typeof input.rationale === "string" ? input.rationale : "";
+	return (
+		<div data-testid="rejudge-card" className="lh-card-enter relative my-1 rounded-xl border bg-card p-4">
+			<div className="mb-1 flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+				Re-examined
+				{(OUTCOME_LABEL[verdict] ?? "") !== "" && (
+					<span className={cn("rounded px-1.5 py-0.5", OUTCOME_CHIP[verdict])}>{OUTCOME_LABEL[verdict]}</span>
+				)}
+			</div>
+			{rationale.length > 0 && (
+				<div className="text-sm text-foreground/50">
+					<ToolContentResponse>{rationale}</ToolContentResponse>
+				</div>
+			)}
 		</div>
 	);
 }
@@ -175,7 +209,7 @@ function MetadataPopover({
 	problemInput,
 }: {
 	concludeInput: { outcome?: string; rung?: unknown; missClass?: unknown; retest?: unknown };
-	problemInput: { mode?: unknown; target?: unknown };
+	problemInput: { mode?: unknown; target?: unknown; move?: unknown; medium?: unknown };
 }) {
 	const [open, setOpen] = useState(false);
 	const triggerRef = useRef<HTMLButtonElement | null>(null);
@@ -215,7 +249,11 @@ function MetadataPopover({
 	const miss = typeof concludeInput.missClass === "string" ? concludeInput.missClass : "";
 	const retest = typeof concludeInput.retest === "boolean" ? concludeInput.retest : undefined;
 	const outcome = typeof concludeInput.outcome === "string" ? concludeInput.outcome : "";
-	if (!mode && targets.length === 0 && !rung && !miss && retest === undefined) return null;
+	// Improvise's pose (2026-10-30): move + medium replace practice's mode,
+	// and there is no hint rung, miss class or retest.
+	const move = typeof problemInput.move === "string" ? problemInput.move : "";
+	const medium = typeof problemInput.medium === "string" ? problemInput.medium : "";
+	if (!mode && !move && targets.length === 0 && !rung && !miss && retest === undefined) return null;
 
 	return (
 		<div ref={rootRef} className="relative mt-3">
@@ -256,8 +294,19 @@ function MetadataPopover({
 						className="z-50 w-80 max-w-[calc(100vw-1rem)] rounded-xl border bg-card p-4 text-left shadow-lg"
 					>
 				<dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs">
-						<dt className="text-muted-foreground">Mode</dt>
-						<dd className="font-mono">{mode || "—"}</dd>
+						{move ? (
+							<>
+								<dt className="text-muted-foreground">Move</dt>
+								<dd className="font-mono">{move}</dd>
+								<dt className="text-muted-foreground">Medium</dt>
+								<dd className="font-mono">{medium || "text"}</dd>
+							</>
+						) : (
+							<>
+								<dt className="text-muted-foreground">Mode</dt>
+								<dd className="font-mono">{mode || "—"}</dd>
+							</>
+						)}
 						<dt className="text-muted-foreground">Targets</dt>
 						<dd className="font-mono">
 							{targets.length === 0 ? (
@@ -275,12 +324,16 @@ function MetadataPopover({
 						</dd>
 						<dt className="text-muted-foreground">Outcome</dt>
 						<dd className="font-mono">{outcome || "—"}</dd>
-						<dt className="text-muted-foreground">Hint rung</dt>
-						<dd className="font-mono">{rung || "none"}</dd>
-						<dt className="text-muted-foreground">Miss class</dt>
-						<dd className="font-mono">{miss || "none"}</dd>
-						<dt className="text-muted-foreground">Retest</dt>
-						<dd className="font-mono">{retest === undefined ? "—" : retest ? "yes" : "no"}</dd>
+						{!move && (
+							<>
+								<dt className="text-muted-foreground">Hint rung</dt>
+								<dd className="font-mono">{rung || "none"}</dd>
+								<dt className="text-muted-foreground">Miss class</dt>
+								<dd className="font-mono">{miss || "none"}</dd>
+								<dt className="text-muted-foreground">Retest</dt>
+								<dd className="font-mono">{retest === undefined ? "—" : retest ? "yes" : "no"}</dd>
+							</>
+						)}
 					</dl>
 					</div>,
 					document.body,

@@ -67,6 +67,10 @@ export const LEDGER_FILES = {
 	 *  the checkpoint's replacement for chat extractions — notes keep
 	 *  sessions.jsonl, whole-file as they are). */
 	coverage: path.join(PATHS.graph, "coverage.jsonl"),
+	/** Improvisation judgments (contracts/graph.ts ImprovisationJudgment;
+	 *  cognitive-gym reorg, owner 2026-10-30) — idea standings derive
+	 *  from these (core/improvisation.ts). */
+	improvisations: path.join(PATHS.graph, "improvisations.jsonl"),
 } as const;
 
 /**
@@ -87,7 +91,7 @@ export const POSITIONS_FILE = path.join(PATHS.graph, "positions.json");
 export const RENDER_SETTINGS_FILE = path.join(PATHS.graph, "render-settings.json");
 
 /** The graph-family FORMAT STAMP sidecar (schema-versioning wave,
- *  2026-10-10): one version for the whole family — the four JSONL ledgers,
+ *  2026-10-10): one version for the whole family — the five JSONL ledgers,
  *  sources.json, render-settings.json. LAZY v1: absent = v1; the first
  *  graph-family write creates it. positions.json is REBUILDABLE and rides
  *  along unversioned by design (owner ruling). */

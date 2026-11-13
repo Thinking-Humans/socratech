@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CornerDownLeftIcon, DumbbellIcon } from "lucide-react";
+import { CornerDownLeftIcon, DumbbellIcon, ShuffleIcon } from "lucide-react";
 import { GraphView } from "@/components/graph-view";
 import { MinimalHome } from "@/components/minimal-home";
 import { SetupDialog } from "@/components/setup-dialog";
@@ -16,6 +16,13 @@ import { OPENING_PROMPT_FAILURE } from "@/components/opening-prompt";
 import { PathInput } from "@/components/path-input";
 import { SessionStarter } from "@/components/start-session";
 import type { TurnUsage } from "@/src/core";
+
+/** The composer's prompt per mode. */
+const MODE_PLACEHOLDER = {
+	teach: "What do you want to learn?",
+	practice: "What do you want to practice?",
+	improvise: "What do you want to play with?",
+} as const;
 
 /**
  * Home — the knowledge graph is the main view, full-bleed edge to edge
@@ -90,8 +97,10 @@ export function Home({
 	 *  practice switch — practice creates a kind:"practice" session and
 	 *  may carry proposition picks from the chain table (the chip above
 	 *  the composer opens the picker; the picks seed the opening prompt).
-	 *  Not enforcing any input format — the picks are a convenience. */
-	const [mode, setMode] = useState<"teach" | "practice">("teach");
+	 *  Not enforcing any input format — the picks are a convenience.
+	 *  IMPROVISE (owner, 2026-10-30) is the third mode: a kind:"improvise"
+	 *  session over the same picks. */
+	const [mode, setMode] = useState<"teach" | "practice" | "improvise">("teach");
 	const [practiceProps, setPracticeProps] = useState<{ id: string; name: string; statement: string }[]>([]);
 	const [chainSelectOpen, setChainSelectOpen] = useState(false);
 	// The chain table is CONTROLLED off this id set (the lifted pick).
@@ -145,7 +154,7 @@ export function Home({
 			// chains among them); the prompt stays the learner's own words.
 			const target = await starterRef.current.start({
 				title: t,
-				...(mode === "practice" ? { kind: "practice" } : {}),
+				...(mode !== "teach" ? { kind: mode } : {}),
 				...(practiceProps.length > 0 ? { graphContext: { propositions: practiceProps } } : {}),
 			}, fetch, JSON.stringify(catalog?.slots.strong));
 			router.push(target);
@@ -219,7 +228,7 @@ export function Home({
 					    shows the pick HINT so the affordance is discoverable;
 					    teaching mode with nothing picked renders nothing. */}
 					<ComposerActions
-						picker={(practiceProps.length > 0 || mode === "practice") && (
+						picker={(practiceProps.length > 0 || mode !== "teach") && (
 							<NodePickerControl
 								count={practiceProps.length}
 								onOpen={() => setChainSelectOpen(true)}
@@ -272,7 +281,7 @@ export function Home({
 								void start();
 							}
 						}}
-						placeholder={mode === "practice" ? "What do you want to practice?" : "What do you want to learn?"}
+						placeholder={MODE_PLACEHOLDER[mode]}
 						autoFocus
 						className="field-sizing-content lh-input max-h-48 min-h-10 flex-1 resize-none bg-transparent px-2.5 py-2 outline-none placeholder:text-muted-foreground"
 					/>
@@ -296,7 +305,7 @@ export function Home({
 						turns={[] as TurnUsage[]}
 						leadingSlot={
 							<div className="flex items-center gap-0.5 rounded-md border border-border/60 bg-background p-0.5" data-testid="home-mode-switch">
-								{(["teach", "practice"] as const).map((m) => (
+								{(["teach", "practice", "improvise"] as const).map((m) => (
 									<button
 										key={m}
 										type="button"
@@ -310,7 +319,8 @@ export function Home({
 										}
 									>
 										{m === "practice" ? <DumbbellIcon aria-hidden="true" className="size-3" /> : null}
-										{m === "teach" ? "Teach" : "Practice"}
+										{m === "improvise" ? <ShuffleIcon aria-hidden="true" className="size-3" /> : null}
+										{m === "teach" ? "Teach" : m === "practice" ? "Practice" : "Improvise"}
 									</button>
 								))}
 							</div>

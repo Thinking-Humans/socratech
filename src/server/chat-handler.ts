@@ -1,5 +1,6 @@
 import type { Usage } from "@earendil-works/pi-ai";
 import {
+	createImproviseAgent,
 	createPracticeAgent,
 	createProberAgent,
 	createTeacherAgent,
@@ -47,6 +48,7 @@ import { registerTurn, rememberTurnFailure, unregisterTurn } from "./turn-runs.t
 import { persistTurn, triggerExtraction, TurnPersistenceError } from "./turn-service.ts";
 import { hasProbeDone, danglingQuestionOf } from "../core/native-messages.ts";
 import { composeInstructions } from "../agent/teacher-agent.ts";
+import type { PracticeToolContext } from "../agent/tools/practice.ts";
 import { ensureCompacted, kickCompaction, effectiveThresholdTokens } from "./compaction.ts";
 import { catalogContextLimits, refreshConnectionCatalog } from "./model-catalog.ts";
 import { emit } from "../core/events.ts";
@@ -59,7 +61,7 @@ import {
 	retryDrops,
 	type TurnInput,
 } from "../core/input-events.ts";
-import { steerDelivered } from "../core/contracts.ts";
+import { isProblemSessionKind, steerDelivered, type ChatKind } from "../core/contracts.ts";
 import type {CallUsage} from "../core/contracts.ts";
 
 /**
@@ -268,12 +270,12 @@ export async function handleChatInput(
 			engine: piEngineForSpec(conversation, true),
 			canStart: () => connectionBackgroundAllowed(conversation.provider),
 			modelId: modelIdForCompaction,
-			kind: record.kind === "practice" ? "practice" : hasProbeDone(record.messages) ? "teach" : "probe",
+			kind: isProblemSessionKind(record.kind) ? "practice" : hasProbeDone(record.messages) ? "teach" : "probe",
 			thresholdTokens: effectiveThresholdTokens(
 				effective.compaction?.thresholdTokens,
 				catalogContextLimits().get(modelIdForCompaction),
 			),
-			systemPromptTokens: Math.ceil(composeInstructions(record.kind === "practice" ? "practice" : "teacher").length / 4),
+			systemPromptTokens: Math.ceil(composeInstructions(promptAgentOf(record.kind)).length / 4),
 		},
 		chatId,
 	);
@@ -443,31 +445,43 @@ export async function handleChatInput(
 	// PRACTICE BRANCH (owner design, 2026-10-04): a kind:"practice"
 	// session builds the practitioner from turn 1 — no prober→teacher
 	// split, no plan/question/job tools; the whole registry is
-	// problem + conclude. buildAgent stays honored (the test seam is
-	// uniform across kinds).
+	// problem + conclude. IMPROVISE (owner design, 2026-10-30) is the same
+	// branch with its own agent: the same context plus the judgment writer.
+	// buildAgent stays honored (the test seam is uniform across kinds).
+	const problemSessionContext: PracticeToolContext = {
+		chatId,
+		chatStore: stores.chatStore,
+		// TARGET VALIDATION (owner round 9): the practice tools read the
+		// WHOLE graph fresh per pose — targets validate against every
+		// proposition, not just the session's picks (pickless sessions
+		// and future graph-tools poses stay valid).
+		graphNodes: () => stores.graphStore.readNodes(),
+		// THE RARELY-NEEDED SET (owner round 10): research + pdf jobs
+		// (same runner/gating as the teacher's — research honestly
+		// absent when no engine is live) and the map readers behind
+		// the SAME settings gate as the prober's.
+		jobs: {
+			chatId,
+			jobStore: stores.jobStore,
+			spawn: (job, input) => void jobRunner.runJob(job.id, input),
+			searchAvailable,
+		},
+		...(graphToolsEnabled(effective) ? { graph: { chatStore: stores.chatStore, graphStore: stores.graphStore } } : {}),
+	};
 	const constructed: TeachingAgent = buildAgent
 		? buildAgent({ ...agentOpts, teaching })
 		: record.kind === "practice"
-			? createPracticeAgent(
+			? createPracticeAgent(problemSessionContext, agentOpts)
+			: record.kind === "improvise"
+			? createImproviseAgent(
 					{
-						chatId,
-						chatStore: stores.chatStore,
-						// TARGET VALIDATION (owner round 9): the practice tools read the
-						// WHOLE graph fresh per pose — targets validate against every
-						// proposition, not just the session's picks (pickless sessions
-						// and future graph-tools poses stay valid).
-						graphNodes: () => stores.graphStore.readNodes(),
-						// THE RARELY-NEEDED SET (owner round 10): research + pdf jobs
-						// (same runner/gating as the teacher's — research honestly
-						// absent when no engine is live) and the map readers behind
-						// the SAME settings gate as the prober's.
-						jobs: {
-							chatId,
-							jobStore: stores.jobStore,
-							spawn: (job, input) => void jobRunner.runJob(job.id, input),
-							searchAvailable,
-						},
-						...(graphToolsEnabled(effective) ? { graph: { chatStore: stores.chatStore, graphStore: stores.graphStore } } : {}),
+						...problemSessionContext,
+						// GRAPH GATE: the judgment is a graph write — it dies with the
+						// master switch like extraction (the tools still judge, and say
+						// nothing was recorded).
+						...(extractionEnabled(effective.graph)
+							? { recordJudgment: (judgment) => stores.graphStore.appendImprovisation(judgment) }
+							: {}),
 					},
 					agentOpts,
 				)
@@ -586,8 +600,10 @@ export async function handleChatInput(
 				// extraction, its auditor — dies with the master switch.
 				// PRACTICE (owner, 2026-10-04): practice sessions write nothing —
 				// no extraction, no graph, no coverage (v1: the session itself
-				// is the deliverable).
-				if ((!requestCycle || requestCycle.dispatched) && record.kind !== "practice" && extractionEnabled(effective.graph)) {
+				// is the deliverable). IMPROVISE (owner, 2026-10-30): no
+				// extraction either — its one graph write is the judgment,
+				// made by its conclude/rejudge tools.
+				if ((!requestCycle || requestCycle.dispatched) && !isProblemSessionKind(record.kind) && extractionEnabled(effective.graph)) {
 					// Fresh per-turn read of the graph section's chunk budget
 					// (extraction-UX redesign, 2026-09-24): the trigger compares
 					// against it and the pipeline's batches share it.
@@ -643,12 +659,12 @@ export async function handleChatInput(
 							engine: kickEngine,
 							canStart: () => connectionBackgroundAllowed(spec.provider),
 							modelId: kickModelId,
-							kind: freshRecord.kind === "practice" ? "practice" : hasProbeDone(freshRecord.messages) ? "teach" : "probe",
+							kind: isProblemSessionKind(freshRecord.kind) ? "practice" : hasProbeDone(freshRecord.messages) ? "teach" : "probe",
 							thresholdTokens: effectiveThresholdTokens(
 								fresh.compaction?.thresholdTokens,
 								catalogContextLimits().get(kickModelId),
 							),
-							systemPromptTokens: Math.ceil(composeInstructions(freshRecord.kind === "practice" ? "practice" : "teacher").length / 4),
+							systemPromptTokens: Math.ceil(composeInstructions(promptAgentOf(freshRecord.kind)).length / 4),
 						};
 					}, chatId);
 			},
@@ -680,4 +696,10 @@ export async function handleChatInput(
 		console.error(`[chat ${chatId}] turn failed to start:`, err);
 		return Response.json({ error: "Failed to start the turn" }, { status: 500 });
 	}
+}
+
+/** The prompt agent composing a record's system prompt (compaction's
+ *  token estimate): problem-session kinds compose their own directory. */
+function promptAgentOf(kind: ChatKind | undefined): "practice" | "improvise" | "teacher" {
+	return kind === "practice" || kind === "improvise" ? kind : "teacher";
 }

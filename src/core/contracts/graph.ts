@@ -8,6 +8,11 @@
  * from the session's plan tree. The graph is an extraction of the reasoning
  * chains from all teaching sessions (and imported notes) — NOTHING else:
  * no quiz outcomes, no understanding assessments (2026-09-27 cleanup).
+ * The ONE deliberate exception (cognitive-gym reorg, owner 2026-10-30):
+ * improvisation judgments (ImprovisationJudgment below) — the evidence an
+ * idea was used creatively, from which its standing (provisional/solid,
+ * core/improvisation.ts) is derived on read. A standing describes the
+ * idea's place in the graph, never a rating of the learner.
  * Anything not
  * yet decided (the state model, strength derivation, selection strategies) is deliberately NOT here — transitional
  * stubs carry the renderer until those land.
@@ -122,21 +127,43 @@ export interface NamingRunStats {
  *  (the format.json sidecar — src/store/graph-format.ts). */
 export const CURRENT_GRAPH_FORMAT_VERSION = 1;
 
+/** What KIND of idea a node holds (cognitive-gym reorg, owner 2026-10-30):
+ *  the isolate → integrate → improvise loop is domain-neutral, so the node
+ *  is a single IDEA UNIT, not only a true claim. "proposition" is a true,
+ *  self-contained statement (every pre-reorg node); "awareness-experiment"
+ *  is an experiment in awareness the learner can run and vary. Music
+ *  ("musical-idea") is planned, deliberately not yet a member.
+ *  ADDING A MEMBER REQUIRES BUMPING CURRENT_GRAPH_FORMAT_VERSION: older
+ *  builds skip unknown kinds on read, and their deletion rewrites would
+ *  then silently erase those lines (graph-format.ts honest refusal). */
+export const IDEA_KINDS = ["proposition", "awareness-experiment"] as const;
+export type IdeaKind = (typeof IDEA_KINDS)[number];
+
+/** A node's kind — absent (every pre-reorg line) reads as "proposition",
+ *  so no ledger migration exists. */
+export function ideaKindOf(node: Pick<GraphNode, "kind">): IdeaKind {
+	return node.kind ?? "proposition";
+}
 
 export interface GraphNode {
 	/** Opaque stable id, store-assigned: "n_" + nanoid-like. */
 	id: string;
+	/** The idea's kind (IdeaKind). OPTIONAL: absent = "proposition"
+	 *  (ideaKindOf). Like `name`, the FIRST line defines it; a link-append
+	 *  never changes it. */
+	kind?: IdeaKind;
 	/** A very short label for the node — a compact handle like a glossary
 	 *  headword ("Will to power", "Divine command theory"): what the graph
 	 *  shows at a glance. Presentational only — not unique, not an identity
 	 *  key, never precise: the statement carries the precision. Set at
 	 *  creation (first line defines); a link-append never changes it. */
 	name: string;
-	/** The minimal proposition — one true, self-contained statement, at
-	 *  full precision. The IDENTITY ANCHOR: the auditor recognizes a
-	 *  re-encounter by judgment against this (link-or-create), not by
-	 *  string matching. Shown in the detail card; the canvas label is the
-	 *  name. */
+	/** The minimal idea, at full precision — for a proposition, one true,
+	 *  self-contained statement; for an awareness experiment, what is done
+	 *  and what is attended to. The IDENTITY ANCHOR: the auditor
+	 *  recognizes a re-encounter by judgment against this (link-or-create),
+	 *  not by string matching. Shown in the detail card; the canvas label
+	 *  is the name. */
 	statement: string;
 	/** Verbatim phrasings sessions used for this proposition (the identity
 	 *  audit trail — how the world said what the node says). */
@@ -172,6 +199,58 @@ export interface CoverageEntry {
 	foldedAt: string;
 }
 
+/** The two improvisation moves (owner, 2026-10-30): use the idea
+ *  creatively in a DIFFERENT context, or try a slightly differing idea
+ *  in the SAME place. Adding a member requires bumping
+ *  CURRENT_GRAPH_FORMAT_VERSION (same reason as IDEA_KINDS). */
+export const IMPROVISATION_MOVES = ["context-shift", "variant"] as const;
+export type ImprovisationMove = (typeof IMPROVISATION_MOVES)[number];
+
+/** How an attempt is expressed (owner, 2026-10-30) — a second axis beside
+ *  the move: plain text, speech (dictated), rap (spoken to a beat — the
+ *  meter and rhyme are the constraint the idea must survive), or a
+ *  moodboard (an assembled set of images showing the idea's aesthetic is
+ *  understood). The full list is fixed now, ahead of the capture UIs, so
+ *  adding those needs no format bump; adding a member later does (same
+ *  reason as IDEA_KINDS). */
+export const IMPROVISATION_MEDIA = ["text", "speech", "rap", "moodboard"] as const;
+export type ImprovisationMedium = (typeof IMPROVISATION_MEDIA)[number];
+
+/** improvisations.jsonl line (cognitive-gym reorg, owner 2026-10-30): ONE
+ *  AI judgment of one improvisation attempt. Append-only like every
+ *  ledger: a CONTEST never edits a line — the re-examination appends a
+ *  new judgment whose `revises` names the line it replaces, and the
+ *  derivation (core/improvisation.ts) reads only the unrevised ones.
+ *  Standings (provisional/solid) are derived from these, never stored. */
+export interface ImprovisationJudgment {
+	/** Opaque stable id, writer-assigned. */
+	id: string;
+	/** The idea nodes the attempt exercised — at least one. */
+	nodeIds: string[];
+	move: ImprovisationMove;
+	/** OPTIONAL: absent = "text" (judgments written before media existed). */
+	medium?: ImprovisationMedium;
+	/** The challenge the agent set. */
+	challenge: string;
+	/** The learner's attempt, verbatim. */
+	attempt: string;
+	/** "pass" = the attempt counts as an improvisation of every node in
+	 *  `nodeIds`; "fail" = it does not. */
+	verdict: "pass" | "fail";
+	/** The judge's reasoning, shown to the learner. */
+	rationale: string;
+	/** The (chat, message) point where the judgment was given. */
+	provenance: ProvenancePoint;
+	/** ISO — when the judgment was given (the derivation's clock). A
+	 *  re-examination judges the SAME attempt, so it keeps the original's
+	 *  `at`: a contest never moves the ladder clock. */
+	at: string;
+	/** Re-examination only: the id of the judgment this one replaces. */
+	revises?: string;
+	/** Re-examination only: the learner's contest, verbatim. */
+	contest?: string;
+}
+
 /**
  * Store format (src/store/graph.ts): JSONL ledgers at config.LEDGER_FILES
  * (nodes/chains/sessions), all append-only. Edges are NEVER stored — the
@@ -187,13 +266,17 @@ export interface CoverageEntry {
  *   chains.jsonl   one line per chain ASSERTION; readers merge by
  *                  (premises, conclusion), unioning provenance — the
  *                  first line's arg_ id is the chain's identity.
+ *   improvisations.jsonl
+ *                  one line per improvisation JUDGMENT (a contest's
+ *                  re-examination is a new line naming what it revises).
  *
  * The derived graph is rebuilt by reading the ledgers — store events,
  * derive state. sessions.jsonl is the extraction checkpoint: which chats
  * the extraction pipeline has processed, and through which updatedAt
  * (never extract the same turns twice).
  *
- * The EXTRACTION PIPELINE is the sole graph writer (extractor → auditor →
+ * The EXTRACTION PIPELINE is the sole writer of nodes and chains (the
+ * improvise tools write improvisations.jsonl alone — 2026-10-30) (extractor → auditor →
  * merger), tree-blind and post-hoc (2026-09-27 cleanup — clear separation
  * of work): the extractor is the ONLY stage that sees the raw source
  * (whole session as readable markdown, or raw notes) and extracts the
@@ -215,6 +298,10 @@ export interface CoverageEntry {
 export interface ExtractedProposition {
 	/** Extractor-local id ("p1", …) referenced by edges. */
 	id: string;
+	/** OPTIONAL idea kind (IdeaKind), stamped on a CREATE only. The
+	 *  extractor never sets it (its findings are propositions); the Claude
+	 *  MCP add_idea path does (2026-10-30). */
+	kind?: IdeaKind;
 	/** A very short label — a few words, a compact handle like a glossary
 	 *  headword. Not a sentence, needn't be unique or self-contained: the
 	 *  statement carries the precision. Becomes the node's name on create;

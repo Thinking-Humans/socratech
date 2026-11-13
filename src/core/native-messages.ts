@@ -434,12 +434,27 @@ function cleanToolCallIds(messages: readonly LhMessage[]): Set<string> {
  *  re-authored (the slim schema dropped solutionReveal); legacy conclude
  *  inputs that still carry their own solutionReveal fall back to it at the
  *  card. Undefined when the pose carries no string solution. */
+/** Everything a pose may carry — practice's fields, and improvise's
+ *  (move, medium, criteria — owner, 2026-10-30). All unknown: the record
+ *  is model output, read defensively. */
+export interface ProblemInputFold {
+	statement?: unknown;
+	mode?: unknown;
+	target?: unknown;
+	modelSolution?: unknown;
+	move?: unknown;
+	medium?: unknown;
+	criteria?: unknown;
+}
+
 export function modelSolutionForConclude(
 	messages: readonly LhMessage[],
 	concludeCallId: string,
 ): string | undefined {
 	const input = problemInputForConclude(messages, concludeCallId);
-	return typeof input?.modelSolution === "string" ? input.modelSolution : undefined;
+	if (typeof input?.modelSolution === "string") return input.modelSolution;
+	// Improvise (owner, 2026-10-30): the committed CRITERIA are the reveal.
+	return typeof input?.criteria === "string" ? input.criteria : undefined;
 }
 
 /** The full pose-side fold (owner round 17, 2026-10-06 — observability):
@@ -451,7 +466,7 @@ export function modelSolutionForConclude(
 export function problemInputForConclude(
 	messages: readonly LhMessage[],
 	concludeCallId: string,
-): { statement?: unknown; mode?: unknown; target?: unknown; modelSolution?: unknown } | undefined {
+): ProblemInputFold | undefined {
 	let mi = messages.findIndex(
 		(m) =>
 			(m as { role?: string }).role === "assistant" &&
@@ -470,7 +485,7 @@ export function problemInputForConclude(
 			if (block.type !== "toolCall" || block.name !== PRACTICE_PROBLEM_TOOL) continue;
 			if (!clean.has(block.id)) continue; // a refused pose revealed nothing
 			return (block.arguments ?? undefined) as
-				| { statement?: unknown; mode?: unknown; target?: unknown; modelSolution?: unknown }
+				| ProblemInputFold
 				| undefined;
 		}
 	}

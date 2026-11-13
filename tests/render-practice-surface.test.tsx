@@ -18,7 +18,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, it } from "node:test";
 
 import { PracticeDock } from "../components/practice-dock.tsx";
-import { ConcludeCard, ProblemCard, ThinkingCard } from "../components/practice-cards.tsx";
+import { ConcludeCard, ProblemCard, RejudgeCard, ThinkingCard } from "../components/practice-cards.tsx";
 import { GraphContextCard } from "../components/graph-context-card.tsx";
 import { newGraphContextMessage } from "../src/core/native-messages.ts";
 import { projectView } from "../src/core/view.ts";
@@ -260,5 +260,43 @@ describe("GraphContextCard", () => {
 			[{ id: "n1", name: "A", statement: "S." }], [],
 		) as unknown as LhMessage]);
 		assert.equal((view[0]!.parts[0] as { type: string }).type, "data-graph-context");
+	});
+});
+
+// ── improvise (2026-10-30): the same cards, improvise's words ───────────────
+
+describe("improvise cards", () => {
+	it("ProblemCard: a pose with a move reads Challenge; criteria never render", () => {
+		const html = renderToStaticMarkup(
+			<ProblemCard part={part({ input: { statement: "Rules of a playground game.", move: "context-shift", criteria: "SECRET" } })} />,
+		);
+		assert.match(html, /Challenge/);
+		assert.doesNotMatch(html, /SECRET/);
+	});
+
+	it("ConcludeCard: pass chip, and the reveal is labeled Criteria", () => {
+		const html = renderToStaticMarkup(
+			<ConcludeCard
+				part={part({
+					type: "tool-conclude",
+					input: { outcome: "pass", verdict: "The swings carried it." },
+					reveal: "The forgone alternative is the cost.",
+					problemInput: { move: "context-shift", medium: "speech", criteria: "The forgone alternative is the cost." },
+				})}
+			/>,
+		);
+		assert.match(html, />Pass</);
+		assert.match(html, /Criteria/);
+		assert.doesNotMatch(html, /Model solution/);
+	});
+
+	it("RejudgeCard: the changed verdict and its rationale", () => {
+		const html = renderToStaticMarkup(
+			<RejudgeCard part={part({ type: "tool-rejudge", input: { contest: "x", verdict: "pass", rationale: "Misread the choice." } })} />,
+		);
+		assert.match(html, /data-testid="rejudge-card"/);
+		assert.match(html, /Re-examined/);
+		assert.match(html, />Pass</);
+		assert.match(html, /Misread the choice\./);
 	});
 });

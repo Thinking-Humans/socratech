@@ -29,10 +29,18 @@
  *                   chat leaves the ledgers — its provenance points on
  *                   every node and chain line, its link lines (their
  *                   phrasings die with them), its coverage/checkpoint
- *                   rows — and orphans die: a node
+ *                   rows, its improvisation judgments — and orphans
+ *                   die: a node
  *                   whose references all came from this chat disappears
  *                   entirely, pruned from the positions ledger too (dead
- *                   members would break cluster hulls).
+ *                   members would break cluster hulls), and from every
+ *                   surviving judgment that named it (a judgment left
+ *                   naming no node dies).
+ *
+ * Improvisation judgments (cognitive-gym reorg, 2026-10-30) are graph
+ * content, like nodes: preserve-graph keeps them; delete-nodes removes the
+ * chat's own. An improvise session mints no nodes, so its judgments are
+ * purged even when the chat never touched the node/chain ledgers.
  *
  * Shared nodes survive automatically (the ruling): a node lives iff ANY
  * surviving reference remains — a provenance point from another chat or
@@ -59,6 +67,7 @@ import type {
 	CoverageEntry,
 	GraphChain,
 	GraphNode,
+	ImprovisationJudgment,
 	SessionCheckpoint,
 } from "./contracts.ts";
 import type { GraphStore } from "./ports.ts";
@@ -119,6 +128,8 @@ export function deleteChatTraces(graphStore: GraphStore, chatId: string, mode: C
 	// ── delete-nodes: the full purge ──────────────────────────────────────
 	const nodeLines = graphStore.readNodes();
 	const chainLines = graphStore.readChains();
+	const judgmentLines = graphStore.readImprovisations();
+	const otherJudgments = judgmentLines.filter((line) => line.provenance.chatId !== chatId);
 
 	// Does the chat touch the graph at all? (A never-extracted chat still
 	// needs its coverage rows dropped above, but no ledger rewrite — keeps
@@ -128,8 +139,13 @@ export function deleteChatTraces(graphStore: GraphStore, chatId: string, mode: C
 		nodeLines.some((line) => line.provenance.some((pt) => pt.chatId === chatId)) ||
 		chainLines.some((line) => line.provenance.some((pt) => pt.chatId === chatId));
 	if (!touched) {
-		if (stats.coverageRemoved > 0 || stats.checkpointsRemoved > 0) {
-			graphStore.rewriteLedgers({ coverage, checkpoints });
+		const judgmentsChanged = !sameLines(judgmentLines, otherJudgments);
+		if (stats.coverageRemoved > 0 || stats.checkpointsRemoved > 0 || judgmentsChanged) {
+			graphStore.rewriteLedgers({
+				coverage,
+				checkpoints,
+				...(judgmentsChanged ? { improvisations: otherJudgments } : {}),
+			});
 		}
 		return stats;
 	}
@@ -203,11 +219,14 @@ export function deleteChatTraces(graphStore: GraphStore, chatId: string, mode: C
 	stats.nodesRemoved = [...new Set(nodeLines.map((line) => line.id))].filter((id) => !live.has(id)).length;
 	stats.chainsRemoved = chainLines.length - outChains.length;
 
+	const outJudgments = withoutNodes(otherJudgments, deadNodes);
+
 	graphStore.rewriteLedgers({
 		nodes: outNodes,
 		chains: outChains,
 		coverage,
 		checkpoints,
+		...(sameLines(judgmentLines, outJudgments) ? {} : { improvisations: outJudgments }),
 	});
 
 	// 4. Positions: prune dead nodes AND dead chains (an argument's derived
@@ -247,6 +266,8 @@ export function deleteChatTraces(graphStore: GraphStore, chatId: string, mode: C
  *   - every line of the node (create + link lines)
  *   - every CHAIN referencing it (as premise or conclusion), whatever
  *     session asserted it — a chain with a dead member is not a chain
+ *   - its id in every improvisation judgment (a judgment left naming no
+ *     node dies with it)
  *   - its resting position (and every dead chain's)
  *
  * An ARGUMENT deletion is the same call with an arg_-prefixed id (owner,
@@ -313,9 +334,12 @@ export function deleteNodeTraces(graphStore: GraphStore, nodeId: string): NodeDe
 	// Only the touched ledgers: the node's own lines always die (its file
 	// must move), everything else rewrites only when rows actually drop.
 	const outNodes = graphStore.readNodes().filter((line) => line.id !== nodeId);
+	const judgmentLines = graphStore.readImprovisations();
+	const outJudgments = withoutNodes(judgmentLines, new Set([nodeId]));
 	graphStore.rewriteLedgers({
 		nodes: outNodes,
 		...(outChains.length !== chainLines.length ? { chains: outChains } : {}),
+		...(sameLines(judgmentLines, outJudgments) ? {} : { improvisations: outJudgments }),
 	});
 
 	// The resting positions die with the node and every dead chain.
@@ -331,4 +355,28 @@ export function deleteNodeTraces(graphStore: GraphStore, nodeId: string): NodeDe
 	return {
 		chainsRemoved: chainLines.length - outChains.length,
 	};
+}
+
+/** Strip dead node ids from judgments; a judgment left naming no node dies.
+ *  Untouched lines are returned as the SAME objects (sameLines detects
+ *  change by identity, so an untouched ledger is never rewritten). */
+function withoutNodes(
+	lines: ReadonlyArray<ImprovisationJudgment>,
+	dead: ReadonlySet<string>,
+): ImprovisationJudgment[] {
+	const out: ImprovisationJudgment[] = [];
+	for (const line of lines) {
+		if (!line.nodeIds.some((id) => dead.has(id))) {
+			out.push(line);
+			continue;
+		}
+		const nodeIds = line.nodeIds.filter((id) => !dead.has(id));
+		if (nodeIds.length > 0) out.push({ ...line, nodeIds });
+	}
+	return out;
+}
+
+/** True when `after` is `before` line-for-line (same objects, same order). */
+function sameLines<T>(before: ReadonlyArray<T>, after: ReadonlyArray<T>): boolean {
+	return before.length === after.length && before.every((line, i) => line === after[i]);
 }

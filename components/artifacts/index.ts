@@ -5,7 +5,7 @@ import { JobCard, PdfJobCard } from "@/components/artifacts/job-card";
 import { VisualCard } from "@/components/artifacts/visual-card";
 import { ProbeDoneCard } from "@/components/artifacts/probe-done-card";
 import { ToolCallCard } from "@/components/artifacts/tool-call-card";
-import { ProblemCard, ConcludeCard } from "@/components/practice-cards";
+import { ProblemCard, ConcludeCard, RejudgeCard } from "@/components/practice-cards";
 
 /**
  * Artifact renderer registry — the extension point for tool-part UI.
@@ -43,6 +43,9 @@ export const artifactRenderers: Record<string, ComponentType<ArtifactPartProps>>
 	// the conclusion carries the outcome + verdict + the reveal.
 	problem: ProblemCard,
 	conclude: ConcludeCard,
+	// Improvise's contest (2026-10-30): a changed verdict on the last
+	// judged challenge.
+	rejudge: RejudgeCard,
 	// The prober's graph tools (wave 7): same quiet expandable card —
 	// collapsed one-liner (tool name + the session id for
 	// list_propositions), the tool's own compact row-per-line output

@@ -42,6 +42,7 @@ import {
 	pendingProblemDismissalOf,
 } from "./native-messages.ts";
 import { QUESTION_TOOLS, toolQuestionKind } from "./pending.ts";
+import { isProblemSessionKind } from "./contracts/chat.ts";
 
 /** One client-originated input event (the POST body's `input`). */
 export type ChatInput =
@@ -232,8 +233,9 @@ export function inputAppends(
 			// Honest 400s, the thinking gate's discipline: the signal is a
 			// between-problems affordance — practice sessions only, nothing
 			// active (mid-problem input rides the dock), and the client gates
-			// make violations unreachable in practice anyway.
-			if (record.kind !== "practice") {
+			// make violations unreachable in practice anyway. Improvise
+			// sessions share the affordance (owner, 2026-10-30).
+			if (!isProblemSessionKind(record.kind)) {
 				throw new ChatInputError("next input is a practice-session affordance");
 			}
 			if (activeProblemOf(record.messages)) {

@@ -18,6 +18,9 @@
 export * from "./contracts.ts";
 export * from "./ports.ts";
 export * from "./chains.ts";
+// improvisation.ts (cognitive-gym reorg, 2026-10-30): idea standings
+// derived from improvisation judgments — pure, browser-safe.
+export * from "./improvisation.ts";
 export * from "./render-settings.ts";
 
 export * from "./question-core.ts";
