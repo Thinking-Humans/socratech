@@ -17,10 +17,10 @@ function press(init: { key: string; code: string; ctrlKey?: boolean; metaKey?: b
 }
 
 describe("eventBinding — non-Latin layouts", () => {
-	it("Ctrl+K on a Russian layout is the model selector, as on a Latin layout", () => {
+	it("Ctrl+K on a Russian layout is search-everything, as on a Latin layout", () => {
 		const binding = eventBinding(press({ key: "л", code: "KeyK", ctrlKey: true }));
 		assert.equal(binding, "mod+k");
-		assert.equal(actionForBinding(binding), "open-model-picker");
+		assert.equal(actionForBinding(binding), "search-everything");
 	});
 
 	it("shift stays explicit: Ctrl+Shift+F on a Russian layout is the sessions search", () => {
@@ -52,7 +52,9 @@ describe("eventBinding — non-Latin layouts", () => {
 			for (const modifier of [{ ctrlKey: true }, { metaKey: true }]) {
 				const binding = eventBinding(press({ key: "λ", code: `Key${match[2]!.toUpperCase()}`, shiftKey: !!match[1], ...modifier }));
 				assert.equal(binding, action.binding);
-				assert.equal(actionForBinding(binding), action.id);
+				// Surface-owned keys (the journal's) are matched by their surface,
+				// never through the global map.
+				if (!action.surfaceOwned) assert.equal(actionForBinding(binding), action.id);
 			}
 		}
 	});

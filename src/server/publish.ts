@@ -33,12 +33,13 @@ import type {
 	PublishResult,
 	PublishTarget,
 } from "../core/contracts/journal.ts";
-import { exportJournal, publishedCells, type JournalBundle } from "../core/journal-export.ts";
+import { exportJournal, publishedCells, publishedMediaNames, type JournalBundle } from "../core/journal-export.ts";
+import { MEDIA_DIR } from "../core/journal-media.ts";
+import { journalMediaFile } from "./journal-media.ts";
+import { extractPublishedCells } from "./notebook-learning.ts";
 import { JournalError } from "../core/journal.ts";
 import { getGraph } from "../core/graph.ts";
-import { extractionEnabled } from "../core/settings-resolution.ts";
-import { slotsConfigured } from "../core/settings.ts";
-import { effectiveSettings, stores } from "./stores.ts";
+import { stores } from "./stores.ts";
 
 const run = promisify(execFile);
 
@@ -151,6 +152,7 @@ export async function planPublish(journalId: string): Promise<PublishPlan> {
 		const bundle = exportJournal(journal, { date: today(), format: "markdown", ideaNames: ideaNames() });
 		plan.dir = path.posix.join("content/posts", bundle.dir);
 		plan.files = Object.entries(bundle.files).map(([name, content]) => ({ name, status: "new" as const, content }));
+		for (const name of publishedMediaNames(journal)) plan.files.push({ name: `${MEDIA_DIR}/${name}`, status: "new" });
 		return plan;
 	}
 
@@ -179,6 +181,27 @@ export async function planPublish(journalId: string): Promise<PublishPlan> {
 			onDisk === null ? "new" : withoutLastmod(onDisk) === withoutLastmod(content) ? "unchanged" : "changed";
 		plan.files.push({ name, status, content });
 	}
+
+	// Embedded images / videos (journal-media): copied into <bundle>/media/.
+	// Stored names carry a unique tag, so a same-size file is the same file.
+	const media = publishedMediaNames(journal);
+	for (const name of media) {
+		const src = journalMediaFile(journalId, name);
+		if (!src) {
+			plan.blockers.push(`A cell embeds ${MEDIA_DIR}/${name}, but that file is missing from this journal.`);
+			continue;
+		}
+		const dest = path.join(abs, MEDIA_DIR, name);
+		const status: PlannedFileStatus = !fs.existsSync(dest) ? "new" : fs.statSync(dest).size === fs.statSync(src).size ? "unchanged" : "changed";
+		plan.files.push({ name: `${MEDIA_DIR}/${name}`, status });
+	}
+	let onDiskMedia: string[] = [];
+	try {
+		onDiskMedia = fs.readdirSync(path.join(abs, MEDIA_DIR));
+	} catch {
+		/* no media folder yet */
+	}
+	for (const name of onDiskMedia) if (!media.includes(name)) plan.files.push({ name: `${MEDIA_DIR}/${name}`, status: "removed" });
 
 	const dirty = await tryGit(target.siteRepo, ["status", "--porcelain", "--", dir]);
 	if (dirty) plan.blockers.push(`${dir} has uncommitted changes in the site repo — commit or discard them first.`);
@@ -217,6 +240,12 @@ export async function publishJournal(journalId: string, confirmDir: string): Pro
 			// Unchanged files stay untouched: rewriting them would commit a
 			// lastmod-only diff.
 			else if (f.status !== "unchanged" && f.content !== undefined) fs.writeFileSync(path.join(abs, f.name), f.content, "utf-8");
+			else if (f.status !== "unchanged" && f.name.startsWith(`${MEDIA_DIR}/`)) {
+				const src = journalMediaFile(journalId, f.name.slice(MEDIA_DIR.length + 1));
+				if (!src) throw new JournalError(`${f.name} disappeared before publishing.`, "conflict");
+				fs.mkdirSync(path.join(abs, MEDIA_DIR), { recursive: true });
+				fs.copyFileSync(src, path.join(abs, f.name));
+			}
 		}
 
 		await git(target.siteRepo, ["add", "-A", "--", dir]);
@@ -237,7 +266,6 @@ export async function publishJournal(journalId: string, confirmDir: string): Pro
 		if (!fresh) throw new JournalError(`No journal [${journalId}].`, "not_found");
 		// Nothing staged = nothing published: no record, no graph feed.
 		if (!staged) return { journal: fresh, dir, changed: false, pushed: false, ...(plan.url ? { url: plan.url } : {}), graphImport: "unchanged" };
-		const previousAt = fresh.publications.filter((p) => p.siteRepo === target.siteRepo).at(-1)?.at;
 
 		const at = new Date().toISOString();
 		const publication: JournalPublication = {
@@ -249,37 +277,13 @@ export async function publishJournal(journalId: string, confirmDir: string): Pro
 		};
 		const journal = stores.journalStore.saveJournal({ ...fresh, publications: [...fresh.publications, publication], updatedAt: at });
 
-		const graphImport = feedGraph(journal, plan.url ?? `${target.siteRepo}/${dir}/index.md`, previousAt);
+		// Every published cell that is new or edited since its last extraction
+		// (notebook-learning.ts: one graph source per cell; edits replace).
+		const graphImport = extractPublishedCells(journal);
 		return { journal, dir, changed: true, ...(commit ? { commit } : {}), pushed, ...(plan.url ? { url: plan.url } : {}), graphImport };
 	} finally {
 		inFlight.delete(journalId);
 	}
-}
-
-/**
- * D7: the published reflections join the graph through the notes-import
- * front door — the same extractor → auditor → merger as imported notes.
- * The file path is the post's stable URL (or bundle path), so a republish
- * reuses the deterministic source id instead of minting a second source.
- * Re-import is not exactly-once (extraction.ts importNotes), so a
- * republish sends ONLY the cells edited since the previous publication —
- * unchanged reflections are never re-extracted.
- * Fire-and-forget; skipped when the graph is off, under tests, or when
- * nothing reflective was published.
- */
-function feedGraph(journal: Journal, filePath: string, since?: string): GraphImportOutcome {
-	if (process.env.NODE_ENV === "test") return "test";
-	if (!extractionEnabled(effectiveSettings().graph)) return "graph-off";
-	if (!slotsConfigured(stores.settingsStore.readSettings()?.models)) return "models-missing";
-	const text = publishedCells(journal)
-		.filter((c) => (c.role === "reflection" || c.role === "aside") && (since === undefined || c.updatedAt > since))
-		.map((c) => c.source.trim())
-		.join("\n\n");
-	if (!text) return "nothing";
-	void import("./chat-handler.ts")
-		.then(({ extraction }) => extraction.importNotes({ filePath, text: `# ${journal.title}\n\n${text}` }))
-		.catch((err) => console.info(`[journal ${journal.id}] graph import skipped: ${err instanceof Error ? err.message : String(err)}`));
-	return "started";
 }
 
 /**

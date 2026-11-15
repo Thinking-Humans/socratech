@@ -38,14 +38,18 @@ describe("the ⌘B chain — keypress → binding → action → event", () => {
 		assert.equal(kbdEventForAction("toggle-user-thinking"), "lh:kbd-toggle-user-thinking");
 	});
 
-	it("mod+b is the toggle-sidebar action", () => {
-		assert.equal(actionForBinding("mod+b"), "toggle-sidebar");
-		assert.equal(bindingForAction("toggle-sidebar"), "mod+b");
-		assert.equal(formatBinding("mod+b"), IS_MAC ? "⌘B" : "Ctrl+B");
+	// Journal-only (owner, 2026-11-15): Mod+B is the journal's new-code-cell
+	// key (surface-owned, never globally dispatched); the sidebar is Mod+\.
+	it("mod+\\ is the toggle-sidebar action; mod+b is the journal's", () => {
+		assert.equal(actionForBinding("mod+\\"), "toggle-sidebar");
+		assert.equal(bindingForAction("toggle-sidebar"), "mod+\\");
+		assert.equal(formatBinding("mod+\\"), IS_MAC ? "⌘\\" : "Ctrl+\\");
+		assert.equal(actionForBinding("mod+b"), undefined);
+		assert.equal(bindingForAction("journal-new-code"), "mod+b");
 	});
 
 	it("the event the chain ends in is the one the sidebar answers on", () => {
-		const action = actionForBinding("mod+b");
+		const action = actionForBinding("mod+\\");
 		assert.equal(action, "toggle-sidebar");
 		assert.equal(kbdEventForAction(action), "lh:kbd-toggle-sidebar");
 	});

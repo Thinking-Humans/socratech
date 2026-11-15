@@ -14,14 +14,20 @@
  *   exercise    <div class="exercise" markdown="1"> **Exercise n** … </div>
  *   attempt     <div class="attempt" markdown="1"> **Attempt** … </div>
  *   verdict     <div class="verdict" markdown="1"> **Verdict** … </div>
- *   code        fenced block (static, never executable); recorded output in
+ *   agent       <div class="agent" markdown="1"> **Asked** prompt + answer </div>
+ *   code        fenced block; last run's output in
  *               <div class="output" markdown="1"> + a ```text fence
+ * Notebook code cells carry their run number (execution_count) and their
+ * language as metadata.vscode.languageId, so mixed Python/C++ notebooks
+ * highlight per cell on GitHub, VS Code and the blog's nb partial.
  * The blank lines inside each wrapper let CommonMark parse the content as
  * markdown; `markdown="1"` does the same for kramdown. Math passes through
  * untouched for the site's KaTeX step.
  */
 
 import type { Journal, JournalCell, JournalCellRole, JournalExportFormat } from "./contracts/journal.ts";
+import { runnableLang } from "./journal-code.ts";
+import { mediaRefs, publishedMediaMarkdown } from "./journal-media.ts";
 
 export interface JournalExportOptions {
 	/** Post date: "YYYY-MM-DD" or a full ISO timestamp. The bundle
@@ -86,7 +92,8 @@ const LABEL: Partial<Record<JournalCellRole, string>> = { attempt: "Attempt", ve
 
 /** One cell as markdown. `n` numbers exercises. */
 function cellMarkdown(cell: JournalCell, n: number, defaultLang: string): string {
-	const src = cell.source.trim();
+	// Media embeds: videos become <video> tags (images stay markdown).
+	const src = cell.role === "code" ? cell.source.trim() : publishedMediaMarkdown(cell.source.trim());
 	switch (cell.role) {
 		case "reflection":
 			return src;
@@ -97,6 +104,10 @@ function cellMarkdown(cell: JournalCell, n: number, defaultLang: string): string
 		case "attempt":
 		case "verdict":
 			return wrap("div", cell.role, `**${LABEL[cell.role]}**\n\n${src}`);
+		case "agent": {
+			const answer = cell.output?.trim() ?? "";
+			return wrap("div", "agent", [`**Asked**\n\n${src}`, answer].filter(Boolean).join("\n\n"));
+		}
 		case "code": {
 			const parts = [];
 			if (src) parts.push(fence(cell.source, cell.lang || defaultLang));
@@ -141,7 +152,11 @@ function nbSource(text: string): string[] {
 
 function mostCommonLang(cells: JournalCell[], fallback: string): string {
 	const counts = new Map<string, number>();
-	for (const c of cells) if (c.role === "code" && c.lang) counts.set(c.lang, (counts.get(c.lang) ?? 0) + 1);
+	for (const c of cells) {
+		if (c.role !== "code" || !c.lang) continue;
+		const lang = runnableLang(c.lang) ?? c.lang;
+		counts.set(lang, (counts.get(lang) ?? 0) + 1);
+	}
 	let best = fallback;
 	let max = 0;
 	for (const [lang, k] of counts) if (k > max) [best, max] = [lang, k];
@@ -154,19 +169,25 @@ export function renderJournalNotebook(journal: Journal, defaultLang = "python"):
 	const nbCells = cells.map((cell) => {
 		const metadata = { tags: [cell.role] };
 		if (cell.role === "code") {
+			const lang = runnableLang(cell.lang) ?? cell.lang;
 			return {
 				cell_type: "code",
-				execution_count: null,
-				metadata: cell.lang ? { ...metadata, language: cell.lang } : metadata,
+				execution_count: cell.executionCount ?? null,
+				metadata: lang ? { ...metadata, language: lang, vscode: { languageId: lang } } : metadata,
 				outputs: cell.output?.trim()
 					? [{ output_type: "stream", name: "stdout", text: cell.output.replace(/\n*$/, "\n").split(/(?<=\n)/) }]
 					: [],
 				source: nbSource(cell.source),
 			};
 		}
+		if (cell.role === "agent") {
+			const asked = cell.source.trim().split("\n").map((l) => `> ${l}`).join("\n");
+			const answer = cell.output?.trim() ?? "";
+			return { cell_type: "markdown", metadata, source: nbSource([`**Asked**\n\n${asked}`, answer].filter(Boolean).join("\n\n")) };
+		}
 		const label =
 			cell.role === "exercise" ? `**Exercise ${++n}**\n\n` : LABEL[cell.role] ? `**${LABEL[cell.role]}**\n\n` : "";
-		return { cell_type: "markdown", metadata, source: nbSource(label + cell.source.trim()) };
+		return { cell_type: "markdown", metadata, source: nbSource(label + publishedMediaMarkdown(cell.source.trim())) };
 	});
 	const lang = mostCommonLang(cells, defaultLang);
 	const nb = {
@@ -188,4 +209,10 @@ export function exportJournal(journal: Journal, opts: JournalExportOptions): Jou
 	}
 	const body = renderJournalMarkdown(journal, lang);
 	return { dir, files: { "index.md": body ? `${front}\n${body}` : front } };
+}
+
+/** Media files the published cells embed (copied into `<bundle>/media/`). */
+export function publishedMediaNames(journal: Journal): string[] {
+	const names = publishedCells(journal).flatMap((c) => (c.role === "code" ? [] : mediaRefs(`${c.source}\n${c.output ?? ""}`)));
+	return [...new Set(names)];
 }

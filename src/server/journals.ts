@@ -6,9 +6,13 @@
  */
 
 import { randomUUID } from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
+import { PATHS } from "../../config.ts";
 import { isProblemSessionKind } from "../core/contracts.ts";
 import {
 	JournalError,
+	isJournalCellRole,
 	appendCell,
 	moveCell,
 	newJournal,
@@ -21,8 +25,24 @@ import {
 	type NewCellInit,
 } from "../core/journal.ts";
 import { sessionJournalDrafts } from "../core/journal-fill.ts";
-import type { Journal } from "../core/contracts/journal.ts";
+import {
+	INLINE_EXPLAIN_SYSTEM_PROMPT,
+	INLINE_INSERT_SYSTEM_PROMPT,
+	JOURNAL_AGENT_SYSTEM_PROMPT,
+	JOURNAL_ASK_SYSTEM_PROMPT,
+	askAnswerCell,
+	inlineAskPrompt,
+	journalAgentPrompt,
+	journalAskPrompt,
+	runnableLang,
+	type InlineAskInput,
+} from "../core/journal-code.ts";
+import type { CellGraphState, CellUnderstanding, Journal } from "../core/contracts/journal.ts";
+import { searchJournals, type JournalSearchHit } from "../core/journal-search.ts";
 import type { ChatStore, JournalStore } from "../core/ports.ts";
+import { restartKernel, runCode, type RunResult } from "./code-runner.ts";
+import { NoteError } from "./notes.ts";
+import { strongTextStream } from "./notes-ask.ts";
 import { stores } from "./stores.ts";
 
 export function newJournalId(): string {
@@ -123,7 +143,14 @@ export function moveJournalCell(id: string, cellId: string, toIndex: number): Jo
 }
 
 export function deleteJournal(id: string): boolean {
-	return stores.journalStore.deleteJournal(id);
+	const deleted = stores.journalStore.deleteJournal(id);
+	if (deleted) {
+		// Its Python kernel and uploaded media go with it (files its code wrote
+		// under journal-work/ stay — they may be the learner's).
+		restartKernel(id);
+		fs.rmSync(path.join(PATHS.data, "journal-media", id.replace(/[^\w-]/g, "_")), { recursive: true, force: true });
+	}
+	return deleted;
 }
 
 /** JournalError → HTTP status (routes). */
@@ -222,4 +249,157 @@ export async function journalRoute(fn: () => Response | Promise<Response>): Prom
 		console.error("[journals] route failed:", err);
 		return Response.json({ error: "Journal operation failed." }, { status: 500 });
 	}
+}
+
+// ─── Running code + cell /ask (owner, 2026-11-15 — reverses D8) ─────────────
+
+/**
+ * Run a code cell in its journal's session and record the output + run
+ * number on the cell. Reads the cell fresh (what was saved is what runs);
+ * the output lands through ONE patch on a fresh read after the run.
+ */
+export async function runJournalCell(id: string, cellId: string): Promise<{ journal: Journal; run: RunResult }> {
+	const cell = requireJournal(id).cells.find((c) => c.id === cellId);
+	if (!cell) throw new JournalError(`No cell [${cellId}] in journal [${id}].`, "not_found");
+	if (cell.role !== "code") throw new JournalError("Only code cells run.", "invalid");
+	const lang = runnableLang(cell.lang);
+	if (!lang) throw new JournalError(`Can't run "${cell.lang || "text"}" — set the cell's language to python or cpp.`, "invalid");
+	if (!cell.source.trim()) throw new JournalError("The cell is empty.", "invalid");
+	const run = await runCode(id, lang, cell.source);
+	const journal = patchJournalCell(id, cellId, { output: run.output, executionCount: run.executionCount });
+	return { journal, run };
+}
+
+/** Drop the journal's Python state; run numbers restart at 1. */
+export function restartJournalKernel(id: string): void {
+	requireJournal(id);
+	restartKernel(id);
+}
+
+const ASK_ANSWER_PREFIX = "**/ask** ";
+
+/**
+ * Stream the strong model's answer to `question` about one cell (it sees
+ * the whole cell — text, code, output — plus the cells around it). When
+ * the answer is complete it is saved as a private aside right below the
+ * cell (after earlier answers to that cell), even if the reader left.
+ */
+export function journalAskStream(id: string, cellId: string, question: string): ReadableStream<Uint8Array> {
+	if (!question.trim()) throw new JournalError("The question is empty.", "invalid");
+	const prompt = journalAskPrompt(requireJournal(id), cellId, question.trim());
+	const save = (answer: string) => {
+		const fresh = stores.journalStore.getJournal(id);
+		if (!fresh) return;
+		const at = fresh.cells.findIndex((c) => c.id === cellId);
+		let afterId: string | undefined;
+		if (at >= 0) {
+			let last = at;
+			while (fresh.cells[last + 1]?.role === "aside" && fresh.cells[last + 1]!.source.startsWith(ASK_ANSWER_PREFIX)) last++;
+			afterId = fresh.cells[last]!.id;
+		}
+		addJournalCell(id, { role: "aside", source: askAnswerCell(question.trim(), answer) }, afterId);
+	};
+	try {
+		return strongTextStream(JOURNAL_ASK_SYSTEM_PROMPT, prompt, "journal-ask", undefined, save);
+	} catch (err) {
+		if (err instanceof NoteError) throw new JournalError(err.message, "invalid");
+		throw err;
+	}
+}
+
+/**
+ * Run an agent cell: stream the strong model's answer to the cell's request
+ * (whole journal as context). The finished answer becomes the cell's output
+ * — one patch on a fresh read — even if the reader left.
+ */
+export function journalAgentStream(id: string, cellId: string): ReadableStream<Uint8Array> {
+	const journal = requireJournal(id);
+	const cell = journal.cells.find((c) => c.id === cellId);
+	if (!cell) throw new JournalError(`No cell [${cellId}] in journal [${id}].`, "not_found");
+	if (cell.role !== "agent") throw new JournalError("Only agent cells run the agent.", "invalid");
+	if (!cell.source.trim()) throw new JournalError("The agent cell is empty — write a request first.", "invalid");
+	const prompt = journalAgentPrompt(journal, cellId);
+	try {
+		return strongTextStream(JOURNAL_AGENT_SYSTEM_PROMPT, prompt, "journal-agent", undefined, (answer) => {
+			patchJournalCell(id, cellId, { output: answer.trim() });
+		});
+	} catch (err) {
+		if (err instanceof NoteError) throw new JournalError(err.message, "invalid");
+		throw err;
+	}
+}
+
+/** Mod+K: every journal, ranked hits (src/core/journal-search.ts). */
+export function searchAllJournals(query: string): JournalSearchHit[] {
+	const journals = stores.journalStore
+		.listJournals()
+		.map((s) => stores.journalStore.getJournal(s.id))
+		.filter((j): j is Journal => j !== null && j !== undefined);
+	return searchJournals(journals, query);
+}
+
+/** Inline ask while editing: stream an explanation / insert text about the
+ *  highlighted passage. Ephemeral — nothing is saved. */
+export function journalInlineStream(id: string, cellId: string, input: InlineAskInput, signal?: AbortSignal): ReadableStream<Uint8Array> {
+	const prompt = inlineAskPrompt(requireJournal(id), cellId, input);
+	const system = input.mode === "insert" ? INLINE_INSERT_SYSTEM_PROMPT : INLINE_EXPLAIN_SYSTEM_PROMPT;
+	try {
+		return strongTextStream(system, prompt, "notebook-inline", signal);
+	} catch (err) {
+		if (err instanceof NoteError) throw new JournalError(err.message, "invalid");
+		throw err;
+	}
+}
+
+/** Untrusted body → InlineAskInput (route). */
+export function parseInlineAsk(body: Record<string, unknown>): InlineAskInput {
+	const mode = body.mode;
+	if (mode !== "explain" && mode !== "insert" && mode !== "ask") throw new JournalError("mode must be explain, insert or ask", "invalid");
+	const str = (k: string) => (typeof body[k] === "string" ? (body[k] as string) : "");
+	const turns = Array.isArray(body.turns)
+		? (body.turns as unknown[]).flatMap((t) => {
+				const r = t as { role?: unknown; text?: unknown };
+				return (r.role === "user" || r.role === "assistant") && typeof r.text === "string" ? [{ role: r.role as "user" | "assistant", text: r.text }] : [];
+			})
+		: [];
+	const role = str("role");
+	if (!isJournalCellRole(role)) throw new JournalError("role is invalid", "invalid");
+	return { mode, draft: str("draft"), role, ...(str("lang") ? { lang: str("lang") } : {}), selection: str("selection"), turns: turns.slice(-12) };
+}
+
+// ─── Learning fields + insert-before (notebook-learning.ts uses these) ──────
+
+/** Set / clear a cell's rating or graph state — one op on a fresh read. */
+export function setCellLearning(
+	id: string,
+	cellId: string,
+	fields: { understanding?: CellUnderstanding | null; graph?: CellGraphState | null },
+): Journal {
+	return mutate(id, (j, now) => {
+		const i = j.cells.findIndex((c) => c.id === cellId);
+		if (i < 0) throw new JournalError(`No cell [${cellId}] in journal [${id}].`, "not_found");
+		const next = { ...j.cells[i]! };
+		for (const key of ["understanding", "graph"] as const) {
+			if (!(key in fields)) continue;
+			const v = fields[key];
+			if (v === null) delete next[key];
+			else (next as Record<string, unknown>)[key] = v;
+		}
+		const cells = [...j.cells];
+		cells[i] = next;
+		// Learning metadata is not an edit: the cell's updatedAt stays.
+		return { ...j, cells, updatedAt: now };
+	});
+}
+
+/** Insert a new cell directly ABOVE `beforeId` → the journal + the new cell's id. */
+export function insertCellBefore(id: string, beforeId: string, init: Omit<NewCellInit, "id" | "origin">): { journal: Journal; cellId: string } {
+	const cellId = newCellId();
+	const journal = mutate(id, (j, now) => {
+		const at = j.cells.findIndex((c) => c.id === beforeId);
+		if (at < 0) throw new JournalError(`No cell [${beforeId}] in journal [${id}].`, "not_found");
+		const appended = at === 0 ? appendCell(j, { ...init, id: cellId }, now) : appendCell(j, { ...init, id: cellId }, now, j.cells[at - 1]!.id);
+		return at === 0 ? moveCell(appended, cellId, 0, now) : appended;
+	});
+	return { journal, cellId };
 }

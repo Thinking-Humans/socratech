@@ -9,18 +9,19 @@
  *
  * Mounted two ways: as the session's Journal tab (chatId — an absolute
  * overlay over the live transcript, so the chat keeps running underneath)
- * and full-page at /journal/[id] (journalId). Truth is the server: every
+ * and full-page at /notebook/[id] (journalId). Truth is the server: every
  * change is one operation, the response replaces local state, and
  * `journals-changed` refetches when another writer touched it.
  */
 
-import { useCallback, useEffect, useState } from "react";
-import { CodeIcon, MessageSquareQuoteIcon, NotebookPenIcon, PenLineIcon, PlusIcon, SendIcon } from "lucide-react";
-import type { CellPatch, Journal, JournalCellRole } from "@/src/core";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { CodeIcon, MessageSquareQuoteIcon, NotebookPenIcon, PenLineIcon, PlayIcon, PlusIcon, RotateCcwIcon, SendIcon, SparklesIcon } from "lucide-react";
+import { bindingForAction, eventMatchesAction, formatBinding, isTypingSurface, runnableLang, type CellPatch, type Journal, type JournalCellRole, type KeyAction, type UnderstandingLevel } from "@/src/core";
 import { useServerEvent } from "@/components/server-events";
 import { JournalApiError, journalApi } from "@/components/journal/journal-api";
 import { JournalCellView } from "@/components/journal/journal-cell";
 import { PublishPanel } from "@/components/journal/publish-panel";
+import { JOURNAL_FOCUS_CELL_EVENT } from "@/components/journal/search-everything";
 import { cn } from "@/lib/utils";
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -43,6 +44,15 @@ export function JournalView({
 	const [editingId, setEditingId] = useState<string | null>(null);
 	/** The header panel: the server dry run as preview, or the publish confirm. */
 	const [panel, setPanel] = useState<"preview" | "publish" | null>(null);
+	/** Cells with a run in flight. */
+	const [running, setRunning] = useState<ReadonlySet<string>>(() => new Set());
+	/** Cell id → the /ask streaming under it. */
+	const [asking, setAsking] = useState<Record<string, { question: string; text: string }>>({});
+	const [notice, setNotice] = useState<string | null>(null);
+	/** Agent cell id → its answer streaming in. */
+	const [streaming, setStreaming] = useState<Record<string, string>>({});
+	/** The scroll container — focusing it is the notebook's "scroll mode". */
+	const scrollRef = useRef<HTMLDivElement>(null);
 
 	const load = useCallback(async () => {
 		try {
@@ -81,6 +91,147 @@ export function JournalView({
 		[journal, load],
 	);
 
+	const journalIdNow = journal?.id;
+
+	/** Run one code cell; its output + run number come back on the journal. */
+	const runCell = useCallback(
+		async (cellId: string) => {
+			if (!journalIdNow) return;
+			setRunning((s) => new Set(s).add(cellId));
+			try {
+				const { journal: next } = await journalApi.runCell(journalIdNow, cellId);
+				setJournal(next);
+				setError(null);
+			} catch (err) {
+				setError(err instanceof Error ? err.message : String(err));
+			} finally {
+				setRunning((s) => {
+					const n = new Set(s);
+					n.delete(cellId);
+					return n;
+				});
+			}
+		},
+		[journalIdNow],
+	);
+
+	/** Run an agent cell: stream the answer in; the server saves it as the output. */
+	const runAgent = useCallback(
+		async (cellId: string) => {
+			if (!journalIdNow) return;
+			setRunning((s) => new Set(s).add(cellId));
+			setStreaming((m) => ({ ...m, [cellId]: "" }));
+			try {
+				await journalApi.runAgent(journalIdNow, cellId, (text) => setStreaming((m) => ({ ...m, [cellId]: text })));
+				setError(null);
+			} catch (err) {
+				setError(err instanceof Error ? err.message : String(err));
+			} finally {
+				setRunning((s) => {
+					const n = new Set(s);
+					n.delete(cellId);
+					return n;
+				});
+				setStreaming((m) => {
+					const { [cellId]: _, ...rest } = m;
+					return rest;
+				});
+				void load();
+			}
+		},
+		[journalIdNow, load],
+	);
+
+	/** Cells being read into the graph. */
+	const [extracting, setExtracting] = useState<ReadonlySet<string>>(() => new Set());
+
+	/** Rate a cell; "stuck" runs the prerequisites agent cell placed above it. */
+	const rateCell = useCallback(
+		async (cellId: string, level: UnderstandingLevel | null) => {
+			if (!journalIdNow) return;
+			try {
+				const { journal: next, prereqCellId } = await journalApi.rateCell(journalIdNow, cellId, level);
+				setJournal(next);
+				setError(null);
+				const prereq = prereqCellId ? next.cells.find((c) => c.id === prereqCellId) : undefined;
+				if (prereq && !prereq.output?.trim()) void runAgent(prereq.id);
+			} catch (err) {
+				setError(err instanceof Error ? err.message : String(err));
+			}
+		},
+		[journalIdNow, runAgent],
+	);
+
+	/** Read one cell into the graph (only ever on request — or on publish). */
+	const extractCell = useCallback(
+		async (cellId: string) => {
+			if (!journalIdNow) return;
+			setExtracting((s) => new Set(s).add(cellId));
+			try {
+				const { journal: next, outcome, stats } = await journalApi.extractCell(journalIdNow, cellId);
+				setJournal(next);
+				setError(null);
+				const msg: Record<string, string> = {
+					extracted: `Read into the graph: ${stats?.nodes ?? 0} new idea${stats?.nodes === 1 ? "" : "s"}, ${stats?.chains ?? 0} new chain${stats?.chains === 1 ? "" : "s"} (existing ideas were linked, not duplicated).`,
+					unchanged: "Unchanged since it was last read into the graph.",
+					withdrawn: "The cell has no text left — its ideas were withdrawn from the graph.",
+					nothing: "Nothing to read in this cell.",
+					"graph-off": "The knowledge graph is turned off in Settings.",
+					"models-missing": "Pick models in Settings → Models first.",
+				};
+				setNotice(msg[outcome] ?? outcome);
+				setTimeout(() => setNotice(null), 6000);
+			} catch (err) {
+				setError(err instanceof Error ? err.message : String(err));
+			} finally {
+				setExtracting((s) => {
+					const n = new Set(s);
+					n.delete(cellId);
+					return n;
+				});
+			}
+		},
+		[journalIdNow],
+	);
+
+	/** Stream an answer under the cell; the server saves it as an aside. */
+	const askCell = useCallback(
+		async (cellId: string, question: string) => {
+			if (!journalIdNow) return;
+			setAsking((a) => ({ ...a, [cellId]: { question, text: "" } }));
+			try {
+				await journalApi.askCell(journalIdNow, cellId, question, (text) => setAsking((a) => ({ ...a, [cellId]: { question, text } })));
+				setError(null);
+			} catch (err) {
+				setError(err instanceof Error ? err.message : String(err));
+			} finally {
+				setAsking((a) => {
+					const { [cellId]: _, ...rest } = a;
+					return rest;
+				});
+				void load();
+			}
+		},
+		[journalIdNow, load],
+	);
+
+	const runnableIds = (journal?.cells ?? []).filter((c) => c.role === "code" && runnableLang(c.lang) && c.source.trim()).map((c) => c.id);
+
+	const runAll = async () => {
+		for (const id of runnableIds) await runCell(id);
+	};
+
+	const restartKernel = useCallback(async () => {
+		if (!journalIdNow) return;
+		try {
+			await journalApi.restartKernel(journalIdNow);
+			setNotice("Python restarted — variables cleared.");
+			setTimeout(() => setNotice(null), 4000);
+		} catch (err) {
+			setError(err instanceof Error ? err.message : String(err));
+		}
+	}, [journalIdNow]);
+
 	const addCell = useCallback(
 		async (role: JournalCellRole, afterId?: string) => {
 			const before = new Set(journal?.cells.map((c) => c.id));
@@ -91,8 +242,130 @@ export function JournalView({
 		[journal, run],
 	);
 
+	/** Focus a cell's root (command mode) and bring it into view. */
+	const focusCell = useCallback((cellId: string | undefined) => {
+		if (!cellId) return;
+		const el = document.getElementById(`cell-${cellId}`);
+		if (!el) return;
+		el.focus({ preventScroll: true });
+		el.scrollIntoView({ block: "nearest" });
+	}, []);
+
+	// A fresh notebook is one empty markdown cell: open straight into editing it.
+	const autoEditedRef = useRef<string | null>(null);
+	useEffect(() => {
+		if (!journal || autoEditedRef.current === journal.id) return;
+		autoEditedRef.current = journal.id;
+		const only = journal.cells.length === 1 ? journal.cells[0] : undefined;
+		if (only && only.role === "reflection" && only.source === "") setEditingId(only.id);
+	}, [journal]);
+
+	// Search-everything lands here: a #cell-… hash on load, or the event when
+	// this journal is already open.
+	const loaded = journal !== undefined && journal !== null;
+	useEffect(() => {
+		if (!loaded) return;
+		const m = /^#cell-(.+)$/.exec(window.location.hash);
+		if (m) requestAnimationFrame(() => {
+			const el = document.getElementById(`cell-${m[1]}`);
+			el?.focus({ preventScroll: true });
+			el?.scrollIntoView({ block: "center" });
+		});
+		const onFocus = (e: Event) => {
+			const { journalId: jid, cellId } = (e as CustomEvent<{ journalId: string; cellId: string }>).detail;
+			if (jid !== journalIdNow) return;
+			const el = document.getElementById(`cell-${cellId}`);
+			el?.focus({ preventScroll: true });
+			el?.scrollIntoView({ block: "center" });
+		};
+		window.addEventListener(JOURNAL_FOCUS_CELL_EVENT, onFocus);
+		return () => window.removeEventListener(JOURNAL_FOCUS_CELL_EVENT, onFocus);
+	}, [loaded, journalIdNow]);
+
+	// The notebook's keys (Jupyter-style command mode), all from the registry
+	// so Settings → Keyboard rebinds them. Edit-mode keys live in the cell.
+	//   new code / markdown cell below — any mode; agent cell — command mode
+	//   (in edit mode Mod+L is the cell's inline ask)
+	//   Esc on a focused cell → scroll mode (the container takes focus)
+	//   Tab → the top cell · ↑/↓ → previous / next cell
+	const keysRef = useRef({ cells: [] as string[], editingId: null as string | null, addCell, rateCell, extractCell });
+	keysRef.current = { cells: journal?.cells.map((c) => c.id) ?? [], editingId, addCell, rateCell, extractCell };
+	useEffect(() => {
+		if (!loaded) return;
+		const onKey = (e: KeyboardEvent) => {
+			// The interaction provider pre-claims every Tab (native focus
+			// traversal is dead app-wide), so Tab arrives defaultPrevented.
+			if (e.defaultPrevented && e.key !== "Tab") return;
+			const root = scrollRef.current;
+			const target = e.target as HTMLElement | null;
+			// Only this notebook's keys: focus inside it, or nowhere in particular.
+			if (!root || !target || (!root.contains(target) && target !== document.body)) return;
+			const { cells, editingId: editing, addCell: add } = keysRef.current;
+			const cellEl = target.closest<HTMLElement>("[data-cell-id]");
+			const cellId = cellEl?.dataset.cellId ?? editing ?? undefined;
+			const onCellRoot = cellEl !== null && target === cellEl;
+			const claim = () => {
+				e.preventDefault();
+				e.stopPropagation();
+			};
+			const newRole: JournalCellRole | null = eventMatchesAction(e, "journal-new-code")
+				? "code"
+				: eventMatchesAction(e, "journal-new-markdown")
+					? "reflection"
+					: eventMatchesAction(e, "journal-new-agent") && !isTypingSurface(e)
+						? "agent"
+						: null;
+			if (newRole) {
+				claim();
+				void add(newRole, cellId);
+				return;
+			}
+			if (isTypingSurface(e)) return; // edit mode: the cell owns the rest
+			if (onCellRoot && eventMatchesAction(e, "journal-exit-cell")) {
+				claim();
+				root.focus({ preventScroll: true });
+				return;
+			}
+			if (eventMatchesAction(e, "journal-focus-top")) {
+				claim();
+				focusCell(cells[0]);
+				root.scrollTo({ top: 0 });
+				return;
+			}
+			if (onCellRoot && cellId) {
+				const rate: UnderstandingLevel | null = eventMatchesAction(e, "journal-rate-own")
+					? "own"
+					: eventMatchesAction(e, "journal-rate-helped")
+						? "helped"
+						: eventMatchesAction(e, "journal-rate-stuck")
+							? "stuck"
+							: null;
+				if (rate) {
+					claim();
+					void keysRef.current.rateCell(cellId, rate);
+					return;
+				}
+				if (eventMatchesAction(e, "journal-extract-cell")) {
+					claim();
+					void keysRef.current.extractCell(cellId);
+					return;
+				}
+				const i = cells.indexOf(cellId);
+				if (eventMatchesAction(e, "journal-next-cell") && i < cells.length - 1) {
+					claim();
+					focusCell(cells[i + 1]);
+				} else if (eventMatchesAction(e, "journal-prev-cell") && i > 0) {
+					claim();
+					focusCell(cells[i - 1]);
+				}
+			}
+		};
+		document.addEventListener("keydown", onKey);
+		return () => document.removeEventListener("keydown", onKey);
+	}, [loaded, focusCell]);
+
 	if (journal === undefined) {
-		return <div className={cn("p-6 text-sm text-muted-foreground", className)}>{error ?? "Loading journal…"}</div>;
+		return <div className={cn("p-6 text-sm text-muted-foreground", className)}>{error ?? "Loading notebook…"}</div>;
 	}
 
 	if (journal === null) {
@@ -100,7 +373,7 @@ export function JournalView({
 			<div className={cn("flex flex-col items-center justify-center gap-3 p-10 text-center", className)} data-testid="journal-empty">
 				<NotebookPenIcon className="size-8 text-muted-foreground/60" />
 				<p className="max-w-sm text-sm text-muted-foreground">
-					No journal yet. Practice and improvise sessions start one with their first exercise; here you can start one by hand.
+					No notebook yet for this session — start one by hand.
 				</p>
 				{chatId && (
 					<button
@@ -108,7 +381,7 @@ export function JournalView({
 						data-testid="journal-start"
 						onClick={async () => {
 							try {
-								setJournal(await journalApi.create({ title: chatTitle ?? "Untitled journal", chatId }));
+								setJournal(await journalApi.create({ title: chatTitle ?? "Untitled notebook", chatId }));
 							} catch (err) {
 								setError(err instanceof Error ? err.message : String(err));
 							}
@@ -116,7 +389,7 @@ export function JournalView({
 						className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs uppercase tracking-wider text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
 					>
 						<PlusIcon className="size-3" />
-						Start journal
+						Start notebook
 					</button>
 				)}
 				{error && <p className="text-xs text-destructive">{error}</p>}
@@ -128,12 +401,12 @@ export function JournalView({
 	const publicCount = journal.cells.filter((c) => c.publish).length;
 
 	return (
-		<div className={cn("overflow-y-auto", className)} data-testid="journal-view">
+		<div ref={scrollRef} tabIndex={-1} className={cn("overflow-y-auto outline-none", className)} data-testid="journal-view">
 			<div className="mx-auto flex w-full max-w-[46rem] flex-col gap-4 px-4 pb-24 pt-6">
 				<header className="flex flex-col gap-2">
 					<input
 						key={`title-${journal.id}-${journal.title}`}
-						aria-label="Journal title"
+						aria-label="Notebook title"
 						defaultValue={journal.title}
 						onBlur={(e) => {
 							const title = e.target.value.trim();
@@ -189,6 +462,31 @@ export function JournalView({
 							</span>
 						)}
 						<span className="flex-1" />
+						{runnableIds.length > 0 && (
+							<>
+								<button
+									type="button"
+									data-testid="journal-run-all"
+									disabled={running.size > 0}
+									onClick={() => void runAll()}
+									title="Run every python/cpp cell, top to bottom"
+									className="flex items-center gap-1 rounded-full border border-border/80 px-2 py-0.5 uppercase tracking-wide transition-colors hover:text-foreground disabled:opacity-50"
+								>
+									<PlayIcon className="size-3" />
+									Run all
+								</button>
+								<button
+									type="button"
+									data-testid="journal-restart-kernel"
+									onClick={() => void restartKernel()}
+									title="Restart Python (clears variables)"
+									className="flex items-center gap-1 rounded-full border border-border/80 px-2 py-0.5 uppercase tracking-wide transition-colors hover:text-foreground"
+								>
+									<RotateCcwIcon className="size-3" />
+									Restart
+								</button>
+							</>
+						)}
 						<button
 							type="button"
 							data-testid="journal-preview-toggle"
@@ -218,6 +516,11 @@ export function JournalView({
 							{error}
 						</p>
 					)}
+					{notice && !error && (
+						<p className="text-xs text-muted-foreground" role="status">
+							{notice}
+						</p>
+					)}
 				</header>
 
 				{panel ? (
@@ -232,11 +535,12 @@ export function JournalView({
 				) : (
 					<>
 						{journal.cells.length === 0 && (
-							<p className="text-sm text-muted-foreground">Empty journal. Write what you learned — exercises from practice land here too.</p>
+							<p className="text-sm text-muted-foreground">Empty notebook. Ctrl/⌘+M markdown · Ctrl/⌘+B code · Ctrl/⌘+L agent — Python and C++ run here; /ask in any cell.</p>
 						)}
 						{journal.cells.map((cell, i) => (
 							<JournalCellView
 								key={cell.id}
+								journalId={journal.id}
 								cell={cell}
 								index={i}
 								count={journal.cells.length}
@@ -249,12 +553,22 @@ export function JournalView({
 								onAddBelow={() => void addCell(cell.role === "code" ? "code" : "reflection", cell.id)}
 								onMove={(to) => void run((j) => journalApi.moveCell(j.id, cell.id, to))}
 								onDelete={() => void run((j) => journalApi.deleteCell(j.id, cell.id))}
+								onRun={() => (cell.role === "agent" ? runAgent(cell.id) : runCell(cell.id))}
+								onAsk={(q) => askCell(cell.id, q)}
+								running={running.has(cell.id)}
+								asking={asking[cell.id] ?? null}
+								streaming={streaming[cell.id] ?? null}
+								onRate={(level) => void rateCell(cell.id, level)}
+								onExtract={() => void extractCell(cell.id)}
+								extracting={extracting.has(cell.id)}
+								onJournal={setJournal}
 							/>
 						))}
 						<div className="flex flex-wrap gap-1.5 pt-2" data-testid="journal-add">
-							<AddButton icon={<PenLineIcon className="size-3" />} label="Reflection" onClick={() => void addCell("reflection")} />
+							<AddButton icon={<CodeIcon className="size-3" />} label="Code" hint="journal-new-code" onClick={() => void addCell("code")} />
+							<AddButton icon={<PenLineIcon className="size-3" />} label="Markdown" hint="journal-new-markdown" onClick={() => void addCell("reflection")} />
+							<AddButton icon={<SparklesIcon className="size-3" />} label="Agent" hint="journal-new-agent" onClick={() => void addCell("agent")} />
 							<AddButton icon={<MessageSquareQuoteIcon className="size-3" />} label="Aside" onClick={() => void addCell("aside")} />
-							<AddButton icon={<CodeIcon className="size-3" />} label="Code" onClick={() => void addCell("code")} />
 						</div>
 					</>
 				)}
@@ -263,10 +577,14 @@ export function JournalView({
 	);
 }
 
-function AddButton({ icon, label, onClick }: { icon: React.ReactNode; label: string; onClick: () => void }) {
+function AddButton({ icon, label, hint, onClick }: { icon: React.ReactNode; label: string; hint?: KeyAction; onClick: () => void }) {
+	const [keys, setKeys] = useState("");
+	// Post-mount: the binding reads localStorage overrides.
+	useEffect(() => setKeys(hint ? formatBinding(bindingForAction(hint)) : ""), [hint]);
 	return (
 		<button
 			type="button"
+			title={keys ? `${label} (${keys})` : label}
 			onClick={onClick}
 			className="flex items-center gap-1.5 rounded-md border border-dashed border-border px-2.5 py-1 text-xs uppercase tracking-wider text-muted-foreground transition-colors hover:border-solid hover:bg-accent hover:text-foreground"
 		>

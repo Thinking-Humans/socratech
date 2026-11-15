@@ -37,11 +37,29 @@ export type KeyAction =
 	| "question-submit"
 	| "open-settings"
 	| "toggle-user-thinking"
-	| "toggle-question-thread";
+	| "toggle-question-thread"
+	| "search-everything"
+	| "journal-new-code"
+	| "journal-new-markdown"
+	| "journal-new-agent"
+	| "journal-run-cell"
+	| "journal-run-next"
+	| "journal-exit-cell"
+	| "journal-focus-top"
+	| "journal-edit-cell"
+	| "journal-next-cell"
+	| "journal-prev-cell"
+	| "journal-inline"
+	| "journal-inline-insert"
+	| "journal-inline-explain"
+	| "journal-rate-own"
+	| "journal-rate-helped"
+	| "journal-rate-stuck"
+	| "journal-extract-cell";
 
 /** Where the cheat sheet groups an action (display only — dispatch is
  *  global; a seam that isn't mounted simply no-ops). */
-export type KeyScope = "global" | "chat" | "graph";
+export type KeyScope = "global" | "chat" | "graph" | "journal";
 
 export interface KeyActionDef {
 	id: KeyAction;
@@ -53,14 +71,22 @@ export interface KeyActionDef {
 	 *  question dock's row machine); never dispatched from the registry,
 	 *  so they can't leak to pages where the surface isn't mounted. */
 	displayOnly?: boolean;
+	/** Rebindable, but a mounted SURFACE matches it itself (the journal's
+	 *  notebook keys) — never in the global dispatch map, so it can share a
+	 *  chord with a global action and win only where its surface lives. */
+	surfaceOwned?: boolean;
 }
 
 export const KEYBOARD_ACTIONS: readonly KeyActionDef[] = [
 	{ id: "toggle-dictation", label: "Toggle dictation", scope: "global", binding: "mod+d" },
 	{ id: "open-settings", label: "Open settings", scope: "global", binding: "mod+," },
-	{ id: "open-model-picker", label: "Model selector", scope: "global", binding: "mod+k" },
+	// Journal-only app (owner, 2026-11-15): Mod+K is search-everything, so the
+	// model selector moved to Mod+Shift+K.
+	{ id: "open-model-picker", label: "Model selector", scope: "global", binding: "mod+shift+k" },
+	{ id: "search-everything", label: "Search everything", scope: "global", binding: "mod+k" },
 	{ id: "cycle-thinking", label: "Cycle thinking level", scope: "global", binding: "shift+tab" },
-	{ id: "toggle-sidebar", label: "Toggle sessions sidebar", scope: "global", binding: "mod+b" },
+	// Mod+B belongs to the journal (new code cell, owner 2026-11-15).
+	{ id: "toggle-sidebar", label: "Toggle sidebar", scope: "global", binding: "mod+\\" },
 	{ id: "sessions-search", label: "Search sessions", scope: "global", binding: "mod+shift+f" },
 	// (The Alt+↑/↓/↵ session cycle was RETIRED, owner 2026-10-10: barely
 	// used, felt laggy. Session navigation lives IN the search now — ↑/↓
@@ -87,6 +113,30 @@ export const KEYBOARD_ACTIONS: readonly KeyActionDef[] = [
 	{ id: "question-prev-row", label: "Question · previous row", scope: "chat", binding: "arrowup", displayOnly: true },
 	{ id: "question-pick-row", label: "Question · pick row", scope: "chat", binding: "space", displayOnly: true },
 	{ id: "question-submit", label: "Question · submit", scope: "chat", binding: "enter", displayOnly: true },
+	// The journal's notebook keys (owner, 2026-11-15) — Jupyter-style command
+	// / edit modes, matched by the journal view itself (surfaceOwned).
+	{ id: "journal-new-code", label: "New code cell below", scope: "journal", binding: "mod+b", surfaceOwned: true },
+	{ id: "journal-new-markdown", label: "New markdown cell below", scope: "journal", binding: "mod+m", surfaceOwned: true },
+	{ id: "journal-new-agent", label: "New agent cell below (command mode)", scope: "journal", binding: "mod+l", surfaceOwned: true },
+	{ id: "journal-run-cell", label: "Run cell (edit mode)", scope: "journal", binding: "mod+enter", surfaceOwned: true },
+	{ id: "journal-run-next", label: "Run cell + new cell below (edit mode)", scope: "journal", binding: "shift+enter", surfaceOwned: true },
+	{ id: "journal-exit-cell", label: "Leave cell (once: stop editing · twice: scroll the notebook)", scope: "journal", binding: "escape", surfaceOwned: true },
+	{ id: "journal-focus-top", label: "Focus the top cell", scope: "journal", binding: "tab", surfaceOwned: true },
+	{ id: "journal-edit-cell", label: "Edit the focused cell", scope: "journal", binding: "enter", surfaceOwned: true },
+	{ id: "journal-next-cell", label: "Next cell", scope: "journal", binding: "arrowdown", surfaceOwned: true },
+	{ id: "journal-prev-cell", label: "Previous cell", scope: "journal", binding: "arrowup", surfaceOwned: true },
+	// Inline ask while editing (owner, 2026-11-15): Mod+L starts the chord,
+	// then I inserts an answer / E explains the highlighted text in a small
+	// box (the second key works with or without Mod). Any other key opens the
+	// box for a free question. In command mode Mod+L still adds an agent cell.
+	{ id: "journal-inline", label: "Inline ask about the highlighted text (edit mode) — then I / E", scope: "journal", binding: "mod+l", surfaceOwned: true },
+	{ id: "journal-inline-insert", label: "… then: insert the answer into the cell", scope: "journal", binding: "i", surfaceOwned: true },
+	{ id: "journal-inline-explain", label: "… then: explain it in the box", scope: "journal", binding: "e", surfaceOwned: true },
+	// Rating + graph on the focused cell (command mode).
+	{ id: "journal-rate-own", label: "Rate the focused cell: did it on my own", scope: "journal", binding: "1", surfaceOwned: true },
+	{ id: "journal-rate-helped", label: "Rate: did it with help", scope: "journal", binding: "2", surfaceOwned: true },
+	{ id: "journal-rate-stuck", label: "Rate: couldn't understand, even with help (explains prerequisites)", scope: "journal", binding: "3", surfaceOwned: true },
+	{ id: "journal-extract-cell", label: "Read the focused cell into the graph", scope: "journal", binding: "g", surfaceOwned: true },
 ];
 
 export type KeymapAction = KeyAction | `plugin:${string}:${string}`;
@@ -129,7 +179,7 @@ export function effectiveKeymap(): Map<string, KeyAction> {
 	const overrides = loadOverrides();
 	const map = new Map<string, KeyAction>();
 	for (const def of KEYBOARD_ACTIONS) {
-		if (def.displayOnly) continue; // surface-owned, never dispatched
+		if (def.displayOnly || def.surfaceOwned) continue; // a surface matches these itself
 		const binding = overrides[def.id] ?? def.binding;
 		if (typeof binding === "string" && binding) map.set(binding, def.id);
 	}
@@ -238,4 +288,11 @@ export function formatBinding(binding: string): string {
 	}
 	const keyGlyph = KEY_GLYPH[key] ?? key.toUpperCase();
 	return glyphs.join("") + keyGlyph;
+}
+
+/** Does this event fire `id` (override-aware)? For surfaceOwned actions,
+ *  which their surface matches itself. */
+export function eventMatchesAction(e: KeyboardEvent, id: KeyAction): boolean {
+	const binding = bindingForAction(id);
+	return binding !== "" && eventBinding(e) === binding;
 }

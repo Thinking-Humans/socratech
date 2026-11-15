@@ -12,7 +12,10 @@
  */
 
 /** What a cell is. Order is the UI's role-picker order. */
-export const JOURNAL_CELL_ROLES = ["reflection", "aside", "code", "exercise", "attempt", "verdict"] as const;
+/** `agent` (owner, 2026-11-15): the source is a prompt; running it puts the
+ *  strong model's answer — written with the whole journal as context — in
+ *  `output` (markdown). */
+export const JOURNAL_CELL_ROLES = ["reflection", "aside", "code", "agent", "exercise", "attempt", "verdict"] as const;
 export type JournalCellRole = (typeof JOURNAL_CELL_ROLES)[number];
 
 /** Default visibility by role (owner, 2026-11-15, D3/D4/Q2): exercise
@@ -26,6 +29,7 @@ export const DEFAULT_PUBLISH: Readonly<Record<JournalCellRole, boolean>> = {
 	exercise: true,
 	attempt: false,
 	verdict: false,
+	agent: false,
 };
 
 /** Where an auto-filled cell came from. (chatId, toolCallId, role) is the
@@ -46,10 +50,20 @@ export interface JournalCell {
 	source: string;
 	/** Code cells: the highlight language ("python", "cpp", …). */
 	lang?: string;
-	/** Code cells: recorded output, pasted by the learner (v1 never runs code). */
+	/** Code cells: output of the last run (or pasted, for languages the
+	 *  app cannot run). Agent cells: the model's markdown answer. */
 	output?: string;
+	/** Code cells: the run counter at the last run — Jupyter's `[n]`,
+	 *  exported as the notebook cell's execution_count. */
+	executionCount?: number;
 	publish: boolean;
 	origin?: JournalCellOrigin;
+	/** The learner's rating of this cell (owner, 2026-11-15) — for the text
+	 *  as it stood at `hash`; an edit makes it stale. */
+	understanding?: CellUnderstanding;
+	/** Set when this cell's text was extracted into the graph — `hash` is
+	 *  the text that was read; a different current hash = changed since. */
+	graph?: CellGraphState;
 	createdAt: string;
 	updatedAt: string;
 }
@@ -146,3 +160,35 @@ export interface PublishResult {
  *  the post (rhizoMorphic's convention). */
 export const JOURNAL_EXPORT_FORMATS = ["markdown", "notebook"] as const;
 export type JournalExportFormat = (typeof JOURNAL_EXPORT_FORMATS)[number];
+
+/** How the learner got through a cell (owner, 2026-11-15). "stuck" =
+ *  couldn't understand it even with help → prerequisites get explained. */
+export const UNDERSTANDING_LEVELS = ["own", "helped", "stuck"] as const;
+export type UnderstandingLevel = (typeof UNDERSTANDING_LEVELS)[number];
+
+/** The agent's cross-check of a rating: one question, the learner's
+ *  answer, and whether the understanding held up. */
+export interface UnderstandingCheck {
+	question: string;
+	answer: string;
+	verdict: "holds" | "shaky" | "fails";
+	rationale: string;
+	at: string;
+}
+
+export interface CellUnderstanding {
+	level: UnderstandingLevel;
+	/** textHash of the cell's source when rated. */
+	hash: string;
+	at: string;
+	check?: UnderstandingCheck;
+}
+
+export interface CellGraphState {
+	/** textHash of the extracted text. */
+	hash: string;
+	at: string;
+	/** Ideas / chains this extraction added (new to the graph). */
+	nodes: number;
+	chains: number;
+}

@@ -12,14 +12,18 @@ import { usePathname, useRouter } from "next/navigation";
 import { NotebookPenIcon, PlusIcon } from "lucide-react";
 import type { JournalSummary } from "@/src/core";
 import { useServerEvent, useServerResync } from "@/components/server-events";
-import { journalApi } from "@/components/journal/journal-api";
+import { createNotebook, journalApi } from "@/components/journal/journal-api";
+import { JOURNAL_ONLY } from "@/components/journal/journal-only";
 import { cn } from "@/lib/utils";
 
 export function journalHref(j: Pick<JournalSummary, "id" | "chatId">): string {
-	return j.chatId ? `/chat/${j.chatId}?view=journal` : `/journal/${j.id}`;
+	// Journal-only app (2026-11-15): every journal opens on its own page.
+	if (JOURNAL_ONLY) return `/notebook/${j.id}`;
+	return j.chatId ? `/chat/${j.chatId}?view=journal` : `/notebook/${j.id}`;
 }
 
-export function JournalsSection() {
+/** `fill`: the section IS the sidebar (journal-only) — full height, no divider. */
+export function JournalsSection({ fill = false }: { fill?: boolean }) {
 	const router = useRouter();
 	const pathname = usePathname();
 	const [journals, setJournals] = useState<JournalSummary[] | null>(null);
@@ -39,18 +43,18 @@ export function JournalsSection() {
 	useServerResync(() => void load());
 
 	return (
-		<div className="flex max-h-[30%] min-h-0 flex-col border-t border-border/60 pt-2" data-testid="journals-section">
+		<div
+			className={cn("flex min-h-0 flex-col pt-2", fill ? "flex-1" : "max-h-[30%] border-t border-border/60")}
+			data-testid="journals-section"
+		>
 			<div className="mx-3 mb-1 flex items-center gap-2">
-				<span className="flex-1 text-xs uppercase tracking-widest text-muted-foreground/70">Journals</span>
+				<span className="flex-1 text-xs uppercase tracking-widest text-muted-foreground/70">Notebooks</span>
 				<button
 					type="button"
-					aria-label="New journal"
-					title="New journal"
+					aria-label="New notebook"
+					title="New notebook (one markdown cell)"
 					data-testid="journal-new"
-					onClick={async () => {
-						const j = await journalApi.create({ title: "Untitled journal" });
-						router.push(`/journal/${j.id}`);
-					}}
+					onClick={() => void createNotebook(router)}
 					className="rounded p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
 				>
 					<PlusIcon className="size-3" />
@@ -61,7 +65,7 @@ export function JournalsSection() {
 					<div className="px-2 py-1 text-xs text-muted-foreground/70">None yet.</div>
 				) : (
 					journals.map((j) => {
-						const active = pathname === `/journal/${j.id}`;
+						const active = pathname === `/notebook/${j.id}`;
 						return (
 							<button
 								key={j.id}

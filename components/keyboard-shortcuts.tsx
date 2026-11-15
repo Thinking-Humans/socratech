@@ -24,6 +24,7 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { HostDialog } from "@/components/host-dialog";
+import { SearchEverything } from "@/components/journal/search-everything";
 import { useOptionalInteractionLayers } from "@/components/interaction-layers";
 import { useRouter } from "next/navigation";
 import {
@@ -50,6 +51,7 @@ export { kbdEventForAction };
 export function KeyboardShortcuts() {
 	const router = useRouter();
 	const [cheatOpen, setCheatOpen] = useState(false);
+	const [searchOpen, setSearchOpen] = useState(false);
 	const { open: openSettings } = useSettingsDialog();
 	const controller = useOptionalInteractionLayers();
 	const { manager } = usePlugins();
@@ -60,8 +62,9 @@ export function KeyboardShortcuts() {
 		router: ReturnType<typeof useRouter>;
 		setCheatOpen: (v: boolean) => void;
 		openSettings: () => void;
-	}>({ router, setCheatOpen, openSettings });
-	handlersRef.current = { router, setCheatOpen, openSettings };
+		setSearchOpen: (v: boolean) => void;
+	}>({ router, setCheatOpen, openSettings, setSearchOpen });
+	handlersRef.current = { router, setCheatOpen, openSettings, setSearchOpen };
 
 	useEffect(() => {
 		const onKeyDown = (e: KeyboardEvent) => {
@@ -136,6 +139,11 @@ export function KeyboardShortcuts() {
 				case "cheat-sheet":
 					handlersRef.current.setCheatOpen(true);
 					break;
+				case "search-everything":
+					// Claim Mod+K from the browser's own search shortcut.
+					e.preventDefault();
+					handlersRef.current.setSearchOpen(true);
+					break;
 				case "toggle-question-thread":
 					// The chat view owns it (only while a question waits); claim the
 					// chord so a browser tab's own ⌘J (Downloads) never fires too.
@@ -160,7 +168,12 @@ export function KeyboardShortcuts() {
 		return () => window.removeEventListener("keydown", onKeyDown);
 	}, [controller, manager]);
 
-	return <CheatSheet open={cheatOpen} onClose={() => setCheatOpen(false)} />;
+	return (
+		<>
+			<CheatSheet open={cheatOpen} onClose={() => setCheatOpen(false)} />
+			<SearchEverything open={searchOpen} onClose={() => setSearchOpen(false)} />
+		</>
+	);
 }
 
 /** The ? overlay — the registry rendered as a table (grouped by scope).
@@ -169,9 +182,10 @@ export function KeyboardShortcuts() {
 function CheatSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
 	const headingId = useId();
 	const { rows: pluginRows } = usePluginShortcutRows();
-	const scopes = ["global", "chat", "graph"] as const;
+	const scopes = ["global", "journal", "chat", "graph"] as const;
 	const scopeLabels: Record<(typeof scopes)[number], string> = {
 		global: "Global",
+		journal: "Notebook",
 		chat: "Chat",
 		graph: "Graph view",
 	};

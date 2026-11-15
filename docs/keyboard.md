@@ -10,9 +10,10 @@ in-app cheat sheet. See [Getting started](getting-started.md) for setup.
 |---|---|
 | Toggle dictation | Mod+D |
 | Open settings | Mod+, |
-| Model selector | Mod+K |
+| Search everything (every journal) | Mod+K |
+| Model selector | Mod+Shift+K |
 | Cycle thinking level | Shift+Tab |
-| Toggle sessions sidebar | Mod+B |
+| Toggle sidebar | Mod+\\ |
 | Search sessions | Mod+Shift+F |
 | Graph view | Mod+G |
 | New session | Mod+N |
@@ -29,6 +30,38 @@ Reset, and Reset all controls. Overrides are stored on this device in
 localStorage (`lh:keymap`), not in the learning-data settings file. Contextual
 question keys are shown as **Fixed — part of this screen**, not rebindable.
 Tab and Esc also have dedicated handling outside ordinary registry dispatch.
+
+## Journal (notebook keys)
+
+Jupyter-style command / edit modes in the journal (owner, 2026-11-15). All
+are rebindable in **Settings → Keyboard → Journal**; the journal matches them
+itself (`surfaceOwned`), so Mod+B / Mod+M / Mod+L only act where a journal is
+open.
+
+| Action | Binding |
+|---|---|
+| New code cell below | Mod+B |
+| New markdown cell below | Mod+M |
+| New agent cell below (command mode) | Mod+L |
+| Inline ask about the highlighted text (edit mode) | Mod+L, then **I** insert · **E** explain · type to ask |
+| Run cell (edit mode; agent cells run the agent) | Mod+Enter |
+| Run cell + new cell below (edit mode) | Shift+Enter |
+| Leave cell — once: stop editing · twice: scroll mode | Esc |
+| Focus the top cell | Tab |
+| Edit the focused cell | Enter |
+| Next / previous cell | ↓ / ↑ |
+| Rate the focused cell: on my own / with help / couldn't, even with help | 1 / 2 / 3 |
+| Read the focused cell into the graph | G |
+
+Inline ask: while editing, highlight text (or leave the caret on a line) and
+press Mod+L. **E** explains it in a small box under the cell — follow-ups chat
+there, **Insert** drops an answer in; **I** writes an answer straight into the
+cell after the highlight; any other key opens the box with that key as the
+start of your question. The second key works with or without Mod. Esc closes
+the box. Nothing is saved until you save the cell.
+
+Scroll mode = the notebook itself has focus: arrows, Page Up/Down and Space
+scroll it. While editing a code cell, Tab indents (4 spaces).
 
 ## Keyboard layouts
 

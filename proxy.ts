@@ -28,7 +28,8 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-	// Keep /api itself covered; exempt only the exact streamed endpoint, not
-	// the documents subtree or other plugin routes. Must remain static literals.
-	matcher: ["/api", "/api/((?!plugins/[^/]+/documents/markdown/?$).*)"],
+	// Keep /api itself covered; exempt only the exact streamed endpoints (the
+	// plugin document import, the journal media upload — both enforce the
+	// same policy in-handler), not their subtrees. Must remain static literals.
+	matcher: ["/api", "/api/((?!plugins/[^/]+/documents/markdown/?$|journals/[^/]+/media/?$).*)"],
 };

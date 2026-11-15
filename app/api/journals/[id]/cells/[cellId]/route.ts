@@ -3,9 +3,9 @@
  *   PATCH {role?, source?, lang?, output?, publish?, ifUpdatedAt?}
  *         edit one cell; ifUpdatedAt (the cell's) → 409 when stale
  *   PATCH {toIndex}   move the cell
- *   DELETE            remove the cell
+ *   DELETE            remove the cell (an extracted one leaves the graph too)
  */
-import { asBody, deleteJournalCell, journalRoute, moveJournalCell, parseCellPatch, patchJournalCell } from "@/src/server";
+import { asBody, deleteNotebookCell, journalRoute, moveJournalCell, parseCellPatch, patchJournalCell } from "@/src/server";
 
 export const dynamic = "force-dynamic";
 
@@ -28,5 +28,5 @@ export async function PATCH(req: Request, { params }: Ctx) {
 
 export async function DELETE(_req: Request, { params }: Ctx) {
 	const { id, cellId } = await params;
-	return journalRoute(() => Response.json({ journal: deleteJournalCell(id, cellId) }));
+	return journalRoute(() => Response.json({ journal: deleteNotebookCell(id, cellId) }));
 }

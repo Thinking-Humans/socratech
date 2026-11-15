@@ -1,6 +1,7 @@
 "use client";
 
 import { JournalsSection } from "@/components/journal/journals-section";
+import { JOURNAL_ONLY } from "@/components/journal/journal-only";
 import { NotesSection } from "@/components/notes/notes-section";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
@@ -11,7 +12,7 @@ import type { ChatDeleteMode, ThemeMode } from "@/src/core";
 import { DumbbellIcon, PanelLeftCloseIcon, PanelLeftOpenIcon, PlusIcon, SearchIcon, SettingsIcon, ShuffleIcon } from "lucide-react";
 import { ActivitySection } from "@/components/activity-dock";
 import { CoverageMenuBlock } from "@/components/extraction-coverage";
-import { LhMark } from "@/components/lh-mark";
+import { LhMark, SocratechWordmark } from "@/components/lh-mark";
 import { BrailleSpinner } from "@/components/braille-spinner";
 import { KeyboardShortcuts } from "@/components/keyboard-shortcuts";
 import { SettingsDialogProvider, useSettingsDialog } from "@/components/settings/settings-dialog.tsx";
@@ -694,6 +695,10 @@ function SessionsSidebar() {
 							<LhMark className="size-6" />
 						</Link>
 					</Hint>
+					{/* Socratech wordmark + small "by Thinking Humans" byline beside the mark. */}
+					<Link href="/" tabIndex={-1} aria-hidden="true" className="lh-no-drag mr-auto ml-2 min-w-0">
+						<SocratechWordmark />
+					</Link>
 					<Hint label="Close sidebar" action="toggle-sidebar">
 						<Button
 							variant="ghost"
@@ -708,8 +713,9 @@ function SessionsSidebar() {
 				</div>
 
 				{/* Notes first (2026-11-15): Today / Graph / the vault, above the session doors. */}
-				<NotesSection />
+				{!JOURNAL_ONLY && <NotesSection />}
 
+				{!JOURNAL_ONLY && (<>
 				{/* Core doors always lead explicit plugin sidebar placements. */}
 				<PluginSidebarActions>
 					<button
@@ -868,6 +874,7 @@ function SessionsSidebar() {
 						)
 					)}
 				</div>
+				</>)}
 
 					{/* Background agents (owner, sidebar round): the section is
 					    ALWAYS here — empty means empty (the header sits alone); it
@@ -876,9 +883,9 @@ function SessionsSidebar() {
 					    learner opted out (no ambient signal, user decision). */}
 					{/* Journals (learn-in-public, owner 2026-11-15): below the session
 					    list, above the background agents. */}
-					<JournalsSection />
+					<JournalsSection fill={JOURNAL_ONLY} />
 
-					<ActivitySection />
+					{!JOURNAL_ONLY && <ActivitySection />}
 
 					{/* Settings entry (settings-app wave): same row language as
 					    New session — quiet, bottom-pinned, opens the centered

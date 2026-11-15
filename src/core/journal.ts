@@ -119,8 +119,9 @@ export function appendCell(journal: Journal, init: NewCellInit, now: string, aft
 	return { ...journal, cells, updatedAt: now };
 }
 
-/** The editable fields of a cell. `lang`/`output` set to "" clear them. */
-export type CellPatch = Partial<Pick<JournalCell, "role" | "source" | "lang" | "output" | "publish">>;
+/** The editable fields of a cell. `lang`/`output` set to "" (and
+ *  `executionCount` set to 0) clear them. */
+export type CellPatch = Partial<Pick<JournalCell, "role" | "source" | "lang" | "output" | "publish" | "executionCount">>;
 
 export function updateCell(journal: Journal, cellId: string, patch: CellPatch, now: string): Journal {
 	const i = indexOfCell(journal, cellId);
@@ -131,6 +132,7 @@ export function updateCell(journal: Journal, cellId: string, patch: CellPatch, n
 	const next: JournalCell = { ...prev, ...patch, updatedAt: now };
 	if (!next.lang) delete next.lang;
 	if (!next.output) delete next.output;
+	if (next.executionCount === undefined || next.executionCount <= 0) delete next.executionCount;
 	const cells = [...journal.cells];
 	cells[i] = next;
 	return { ...journal, cells, updatedAt: now };
