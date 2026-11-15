@@ -44,7 +44,7 @@ import { stores } from "./stores.ts";
 const run = promisify(execFile);
 
 /** Files the exporter can produce — the only names publish ever removes. */
-const BUNDLE_FILES = ["index.md", "notebook.ipynb"] as const;
+const BUNDLE_FILES = ["index.md", "notebook.ipynb", "notebook.py"] as const;
 
 /** Settings → concrete target, or null when publishing is not set up. */
 export function resolvePublishTarget(): PublishTarget | null {

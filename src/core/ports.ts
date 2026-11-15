@@ -213,10 +213,11 @@ export interface JobStore {
 	deleteJobsForChat(chatId: string): number;
 }
 
-// ─── JournalStore — learn-in-public journals (data/journals) ─────────────────
+// ─── JournalStore — notebooks (data/notebooks: marimo .py + sidecar) ─────────
 
 /**
- * One JSON file per journal. Replace-whole: edits are pure transforms in
+ * One marimo `.py` + `.socratech.json` sidecar per journal
+ * (core/marimo-format.ts, store/notebooks.ts). Replace-whole: edits are pure transforms in
  * core/journal.ts, the store only persists. Every write announces
  * "journals-changed" after it lands.
  */

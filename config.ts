@@ -32,8 +32,12 @@ export const PATHS = {
 	/** Debug artifacts (env-gated): data/debug/provider-events/<chatId>.jsonl
 	 * raw provider stream recordings (src/agent/provider-events.ts). */
 	debug: path.join(/* turbopackIgnore: true */ DATA_ROOT, "debug"),
-	/** Learn-in-public journals, one JSON file per journal (src/store/journals.ts). */
+	/** Legacy learn-in-public journals (one JSON file each). Read only by the
+	 *  one-time migration to `notebooks`, which moves them to `.migrated/`. */
 	journals: path.join(/* turbopackIgnore: true */ DATA_ROOT, "journals"),
+	/** Notebooks (journals): `<id>.py` (marimo) + `<id>.socratech.json`
+	 *  sidecar each (src/store/notebooks.ts, core/marimo-format.ts). */
+	notebooks: path.join(/* turbopackIgnore: true */ DATA_ROOT, "notebooks"),
 	/** Brain store (docs/brain-store.md): records + vectors + local embedding model cache. */
 	brain: path.join(/* turbopackIgnore: true */ DATA_ROOT, "brain"),
 } as const;

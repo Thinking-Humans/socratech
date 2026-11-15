@@ -30,6 +30,7 @@ import {
 import { journalApi } from "@/components/journal/journal-api";
 import { InlineAskBox, type InlineAskRequest } from "@/components/journal/inline-ask";
 import { CellLearningBar } from "@/components/journal/cell-learning";
+import { MarimoWarning } from "@/components/journal/marimo-warning";
 import { bindingForAction, eventBinding } from "@/src/core";
 import { MessageResponse } from "@/components/ai-elements/message";
 import { cn } from "@/lib/utils";
@@ -565,6 +566,7 @@ export function JournalCellView({
 					<MessageResponse>{renderedOutput}</MessageResponse>
 				</div>
 			)}
+			<MarimoWarning journalId={journalId} cell={cell} />
 			{asking && (
 				<div className="mt-2 rounded-md border border-dashed border-primary/40 px-3 py-2 text-sm" data-testid="journal-cell-asking">
 					<div className="mb-1 flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-muted-foreground">
