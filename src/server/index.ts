@@ -72,6 +72,7 @@ export { pluginQuestionAvailabilityOf, reconcilePluginQuestionCompatibility, pre
 export { claudeCodeInstallationResponse } from "./claude-code.ts";
 // The gym's MCP endpoint (Claude integration, 2026-10-30).
 export { handleMcpRequest } from "./mcp.ts";
+export { clipPage } from "./web-clip.ts";
 export { mcpToken, rotateMcpToken } from "./mcp-access.ts";
 // The custom endpoint module (registers into piModels() + probes for models).
 // No import side effects; the boot sync lives in stores.ts.

@@ -79,10 +79,10 @@ const JUDGE = {
 } as const;
 
 describe("gym MCP — reads", () => {
-	it("exposes the five tools and the improvise prompt", async () => {
+	it("exposes the six tools and the improvise prompt", async () => {
 		const { client } = await connect(memoryGraph());
 		const tools = (await client.listTools()).tools.map((t) => t.name).sort();
-		assert.deepEqual(tools, ["add_idea", "get_idea", "list_ideas", "record_improvisation", "rejudge_improvisation"]);
+		assert.deepEqual(tools, ["add_idea", "get_idea", "import_page_as_notebook", "list_ideas", "record_improvisation", "rejudge_improvisation"]);
 		const prompt = await client.getPrompt({ name: "improvise", arguments: { focus: "opportunity cost" } });
 		const body = (prompt.messages[0]!.content as { text: string }).text;
 		assert.match(body, /record_improvisation/);
