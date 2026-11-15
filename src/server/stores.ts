@@ -10,7 +10,7 @@ import { chatStore } from "../store/chats.ts";
 import { graphStore } from "../store/graph.ts";
 import { sourceOrganizationStore } from "../store/source-organization.ts";
 import { jobStore } from "../store/jobs.ts";
-import { journalStore } from "../store/journals.ts";
+import { notebookStore as journalStore } from "../store/notebooks.ts";
 import { brainStore } from "../store/brain.ts";
 import { settingsStore } from "../store/settings.ts";
 import { themeStore } from "../store/themes.ts";

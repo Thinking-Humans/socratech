@@ -7,6 +7,9 @@
  *   markdown  <date>-<slug>/index.md        front matter + body
  *   notebook  <date>-<slug>/index.md        front matter only
  *             <date>-<slug>/notebook.ipynb  the post (nbformat 4, role tags)
+ *             <date>-<slug>/notebook.py     the same published cells as a
+ *                                           marimo notebook (core/marimo-format.ts;
+ *                                           no sidecar — nothing private ships)
  *
  * Markdown conventions (portable: goldmark/Hugo, kramdown/Jekyll, GitHub):
  *   reflection  plain markdown
@@ -28,6 +31,7 @@
 import type { Journal, JournalCell, JournalCellRole, JournalExportFormat } from "./contracts/journal.ts";
 import { runnableLang } from "./journal-code.ts";
 import { mediaRefs, publishedMediaMarkdown } from "./journal-media.ts";
+import { journalToMarimo } from "./marimo-format.ts";
 
 export interface JournalExportOptions {
 	/** Post date: "YYYY-MM-DD" or a full ISO timestamp. The bundle
@@ -199,13 +203,19 @@ export function renderJournalNotebook(journal: Journal, defaultLang = "python"):
 	return `${JSON.stringify(nb, null, 1)}\n`;
 }
 
+/** The published cells as a marimo notebook — only the .py: the sidecar
+ *  (ratings, private metadata) never leaves the machine. */
+export function renderJournalMarimo(journal: Journal): string {
+	return journalToMarimo({ ...journal, cells: publishedCells(journal) }).py;
+}
+
 export function exportJournal(journal: Journal, opts: JournalExportOptions): JournalBundle {
 	if (!DATE_RE.test(opts.date)) throw new Error(`Export date must start with YYYY-MM-DD, got "${opts.date}".`);
 	const dir = opts.dirName ?? `${opts.date.slice(0, 10)}-${journal.slug}`;
 	const lang = opts.defaultLang ?? "python";
 	const front = renderFrontMatter(journal, opts);
 	if (opts.format === "notebook") {
-		return { dir, files: { "index.md": front, "notebook.ipynb": renderJournalNotebook(journal, lang) } };
+		return { dir, files: { "index.md": front, "notebook.ipynb": renderJournalNotebook(journal, lang), "notebook.py": renderJournalMarimo(journal) } };
 	}
 	const body = renderJournalMarkdown(journal, lang);
 	return { dir, files: { "index.md": body ? `${front}\n${body}` : front } };

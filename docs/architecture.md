@@ -208,7 +208,7 @@ Same layering and one-writer-per-store laws; these are the fork's own systems.
 | Area | Store / files | Doc |
 | --- | --- | --- |
 | Improvise sessions (`kind: "improvise"`) — practice's problem/conclude loop with its own agent; judgments in `graph/improvisations.jsonl` | `src/agent/tools/improvise.ts`, `src/core/improvisation.ts` | `docs/archive/vision.md` |
-| Learn-in-public journals + publishing (user's own `git` against a site clone, push only after confirmation; push-capable routes refuse non-JSON bodies and foreign `Origin`s) | `data/journals/`, `src/server/journals.ts`, `src/server/publish.ts`, `src/core/journal*.ts` | `docs/learn-in-public.md` |
+| Learn-in-public journals + publishing (user's own `git` against a site clone, push only after confirmation; push-capable routes refuse non-JSON bodies and foreign `Origin`s) | `data/notebooks/` (marimo .py + sidecar), `src/server/journals.ts`, `src/server/publish.ts`, `src/core/journal*.ts` | `docs/learn-in-public.md` |
 | Notes-first surface — markdown vault, inline `/ask`, journeys (teach / practice / improvise) in a side pane | vault dir (Settings → Notes), `src/server/notes*.ts`, `components/notes/` | `docs/notes-first.md` |
 | Brain store — local embeddings, hybrid search, `.brain.jsonl`, mem0-style consolidation | `data/brain/`, `src/store/brain.ts`, `src/server/brain.ts`, `src/core/brain.ts` | `docs/brain-store.md` |
 | Claude MCP endpoint — bearer-token capability, the proxy's one exception besides the desktop/browser policy | `src/server/mcp*.ts`, `proxy.ts` | Settings → Claude |

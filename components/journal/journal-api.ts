@@ -4,7 +4,7 @@
  * journal, only the one change. Every mutation returns the fresh journal.
  */
 
-import type { CellPatch, InlineAskInput, UnderstandingCheck, UnderstandingLevel, Journal, JournalCellRole, JournalMetaPatch, JournalSummary, PublishPlan, PublishResult } from "@/src/core";
+import type { CellPatch, InlineAskInput, MarimoRedefinition, UnderstandingCheck, UnderstandingLevel, Journal, JournalCellRole, JournalMetaPatch, JournalSummary, PublishPlan, PublishResult } from "@/src/core";
 
 export type { PublishPlan, PublishResult };
 
@@ -14,6 +14,13 @@ export interface CellRun {
 	ok: boolean;
 	executionCount: number;
 	ms: number;
+}
+
+/** GET /api/journals/[id]/marimo (server: src/server/marimo-check.ts). */
+export interface MarimoCleanReport {
+	checked: boolean;
+	redefinitions: MarimoRedefinition[];
+	unparsable: { cellId: string; error: string }[];
 }
 
 export class JournalApiError extends Error {
@@ -85,6 +92,8 @@ export const journalApi = {
 	/** Run a code cell; the journal comes back with the cell's output + run number. */
 	runCell: async (id: string, cellId: string) => call<{ journal: Journal; run: CellRun }>(`${cellUrl(id, cellId)}/run`, "POST"),
 	restartKernel: async (id: string) => call<{ ok: true }>(`${base}/${id}/kernel`, "DELETE"),
+	/** marimo-clean report: Python globals two cells define (marimo refuses those). */
+	marimoCheck: async (id: string) => call<MarimoCleanReport>(`${base}/${id}/marimo`),
 	/** Stream an answer about one cell; the server saves it as an aside when done. */
 	askCell: (id: string, cellId: string, question: string, onText: (soFar: string) => void, signal?: AbortSignal) =>
 		streamText(`${cellUrl(id, cellId)}/ask`, { question }, onText, signal),

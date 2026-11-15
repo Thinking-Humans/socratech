@@ -31,7 +31,7 @@ Each phase ends green on `npm run typecheck && npm run lint && npm test`.
   - `publish` defaults by role (D3/D4): exercise ✓, reflection ✓, code ✓ (Q2), attempt ✗, verdict ✗, aside ✗
   - `origin`: `{ chatId, toolCallId, ideaIds }` for auto-filled cells
   - `published`: `{ at, siteRepo, path, url, commit }[]`
-- `JournalStore` port in `src/core/ports.ts`; fs adapter `src/store/journals.ts` → `data/journals/<id>.json`; wired in `src/server/stores.ts`.
+- `JournalStore` port in `src/core/ports.ts`; fs adapter `src/store/notebooks.ts` → `data/notebooks/<id>.py` + `<id>.socratech.json` (see *Marimo storage*; originally `data/journals/<id>.json`); wired in `src/server/stores.ts`.
 - `src/core/journal-export.ts` (pure): `Journal → { "index.md": string, "notebook.ipynb"?: string }`. Drops unpublished cells. Front matter: title, date, tags (from target idea names), `socratech: { journal, ideas }`.
 
 ### 2. Auto-fill from sessions — BUILT 2026-11-15
@@ -142,3 +142,17 @@ Jupyter-style working loop inside the Journal pane; the published notebook is th
   - **Teach** → an agent cell that teaches the topic Socratically toward the picked ideas (run on open via `?run=<cellId>`), then an empty markdown cell for the learner's own words.
   - **Practice** → one exercise cell per picked idea (about three for a bare topic), each followed by an empty attempt cell; written up front by the strong model, falling back to an agent cell that poses them.
   - Picked ideas only ever appear in cells the graph doesn't read, so a launched notebook never becomes provenance for ideas the learner didn't write. Improvise stays session-only and is hidden here.
+
+## Marimo storage (owner, 2026-11-15)
+
+A notebook is stored as a **marimo `.py`** (git-friendly, opens in marimo) plus a **sidecar** for what marimo has no slot for. Pure translation: `src/core/marimo-format.ts` (`journalToMarimo`, `marimoToJournal`); adapter: `src/store/notebooks.ts`.
+
+- **Files** (`data/notebooks/`, named by journal id so a title or slug change never renames anything): `<id>.py`, `<id>.socratech.json`, `_opted-out.json` (deleted-session tombstones). Each file is written atomically, the `.py` first.
+- **The .py holds all readable text.** Markdown roles (reflection, aside, exercise, attempt, verdict) → `mo.md(r"""…""")` (marimo's markdown cells). Python code → a real cell with marimo-style refs/defs (best effort; marimo rewrites signatures when it opens the file). C++ and other languages → `mo.md` with a fenced block (rendered, never run by marimo). Agent cells → `_prompt` / `_answer` strings plus a callout display line. A setup cell `import marimo as mo` comes first.
+- **Cell ids are the cell function names** (`def cell_3f2a…(…)`); ids that are not safe Python names are escaped as `c_…`. That match survives reordering and edits in marimo.
+- **The sidecar** holds every Journal field except the cells (id, title, slug, chatId, tags, publications, timestamps, journal-level `graph`, and any future field), and per cell everything but its text: role, lang, publish, executionCount, code output, origin, understanding, graph, timestamps, plus `sourceHash` to notice hand edits. Agent answers live only in the .py.
+- **Hand edits in marimo** load: reordered cells keep their metadata; edited text wins (that cell's `updatedAt` moves); a cell added in marimo gets an id and default metadata (role from its shape); a cell deleted there leaves the sidecar. Cells marimo strips names from (a function-only cell saved as `@app.function`, unparsable code saved as `app._unparsable_cell(…, name="_")`) re-attach by text hash, or, if edited too, when they are the only such cell left against the only orphaned Python entry (otherwise they get a fresh id and default metadata). The store writes back only what it must: the .py when ids changed, the sidecar when metadata did; marimo's own formatting writes nothing. A corrupt sidecar is read around, never overwritten. Deleting a cell in marimo does not withdraw its graph traces (delete in the app for that).
+- **Migration:** the first store call moves `data/journals/<id>.json` into this format and the JSON into `data/journals/.migrated/` (never deleted; idempotent; unreadable files stay put). Tombstones merge into the new `_opted-out.json`.
+- **marimo-clean check:** Socratech keeps its own runner (Python kernel, g++), where a second cell may redefine a global; marimo refuses that. python3's `ast` (`src/server/marimo-check.ts`) reports globals two Python cells define (and a cell defining `mo`) plus unparsable cells. It rides on Python run results (`marimo`) and `GET /api/journals/[id]/marimo`; Python cells show a warning note (`components/journal/marimo-warning.tsx`). Advisory only.
+- **Publishing:** the `notebook` bundle format ships `notebook.py` (published cells only, no sidecar) beside `notebook.ipynb` (still the post the blog parses) and `index.md`.
+- Known marimo quirks: markdown containing `"""` is written as `r'''…'''` (valid; `marimo check --strict` flags it as a style warning, and `--fix` re-escapes it, adding a backslash to the text). Python code whose lines all end in CRLF reads back as LF.

@@ -145,17 +145,21 @@ describe("publish", () => {
 		assert.equal(stores.journalStore.getJournal(withCell.id)!.publications.length, 2);
 	});
 
-	it("format switch to notebook writes the ipynb and front-matter-only index.md", async () => {
+	it("format switch to notebook writes the ipynb, the marimo .py and front-matter-only index.md", async () => {
 		setPublishing({ siteRepo: SITE, format: "notebook", push: false });
 		const j = createJournal({ title: "Notebook post" });
 		addJournalCell(j.id, { role: "code", lang: "python", source: "print(1)", output: "1" });
 		const plan = await planPublish(j.id);
-		assert.deepEqual(plan.files.map((f) => [f.name, f.status]).sort(), [["index.md", "new"], ["notebook.ipynb", "new"]]);
+		assert.deepEqual(plan.files.map((f) => [f.name, f.status]).sort(), [["index.md", "new"], ["notebook.ipynb", "new"], ["notebook.py", "new"]]);
 		assert.equal(plan.remote, null);
 		const r = await publishJournal(j.id, plan.dir!);
 		assert.equal(r.pushed, false);
 		const nb = JSON.parse(fs.readFileSync(path.join(SITE, plan.dir!, "notebook.ipynb"), "utf-8"));
 		assert.equal(nb.cells[0].cell_type, "code");
+		const marimo = fs.readFileSync(path.join(SITE, plan.dir!, "notebook.py"), "utf-8");
+		assert.match(marimo, /^import marimo\n/);
+		assert.match(marimo, /\n {4}print\(1\)\n/);
+		assert.equal(fs.existsSync(path.join(SITE, plan.dir!, "notebook.socratech.json")), false, "the sidecar never ships");
 		setPublishing({ siteRepo: SITE, baseUrl: "https://me.github.io/blog" });
 	});
 

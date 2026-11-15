@@ -41,6 +41,7 @@ import type { CellGraphState, CellUnderstanding, Journal } from "../core/contrac
 import { searchJournals, type JournalSearchHit } from "../core/journal-search.ts";
 import type { ChatStore, JournalStore } from "../core/ports.ts";
 import { restartKernel, runCode, type RunResult } from "./code-runner.ts";
+import { marimoCleanCheck, type MarimoCleanReport } from "./marimo-check.ts";
 import { NoteError } from "./notes.ts";
 import { strongTextStream } from "./notes-ask.ts";
 import { stores } from "./stores.ts";
@@ -253,12 +254,17 @@ export async function journalRoute(fn: () => Response | Promise<Response>): Prom
 
 // ─── Running code + cell /ask (owner, 2026-11-15 — reverses D8) ─────────────
 
+export type { MarimoCleanReport };
+
 /**
  * Run a code cell in its journal's session and record the output + run
  * number on the cell. Reads the cell fresh (what was saved is what runs);
- * the output lands through ONE patch on a fresh read after the run.
+ * the output lands through ONE patch on a fresh read after the run. A
+ * Python run also carries the notebook's marimo-clean report (`marimo`):
+ * globals two cells both define, which marimo would refuse. Advisory: the
+ * run itself never fails on it.
  */
-export async function runJournalCell(id: string, cellId: string): Promise<{ journal: Journal; run: RunResult }> {
+export async function runJournalCell(id: string, cellId: string): Promise<{ journal: Journal; run: RunResult; marimo?: MarimoCleanReport }> {
 	const cell = requireJournal(id).cells.find((c) => c.id === cellId);
 	if (!cell) throw new JournalError(`No cell [${cellId}] in journal [${id}].`, "not_found");
 	if (cell.role !== "code") throw new JournalError("Only code cells run.", "invalid");
@@ -267,7 +273,13 @@ export async function runJournalCell(id: string, cellId: string): Promise<{ jour
 	if (!cell.source.trim()) throw new JournalError("The cell is empty.", "invalid");
 	const run = await runCode(id, lang, cell.source);
 	const journal = patchJournalCell(id, cellId, { output: run.output, executionCount: run.executionCount });
-	return { journal, run };
+	if (lang !== "python") return { journal, run };
+	return { journal, run, marimo: await marimoCleanCheck(journal) };
+}
+
+/** The notebook's marimo-clean report (GET /api/journals/[id]/marimo). */
+export async function journalMarimoCheck(id: string): Promise<MarimoCleanReport> {
+	return marimoCleanCheck(requireJournal(id));
 }
 
 /** Drop the journal's Python state; run numbers restart at 1. */
