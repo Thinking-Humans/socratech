@@ -29,6 +29,7 @@ import type {
 } from "./contracts.ts";
 import type { UserSettings } from "./settings.ts";
 import type { Journal, JournalSummary } from "./contracts/journal.ts";
+import type { BrainSnapshot } from "./contracts/brain.ts";
 
 // ─── ChatStore — the session record's home (data/chats) ─────────────────────
 
@@ -260,3 +261,26 @@ export interface AuthStore {
 	deleteAuthVar(name: string): void;
 }
 
+
+// ─── BrainStore — the second-brain index (data/brain) ──────────────────────
+
+/**
+ * Replace-whole snapshot store (docs/brain-store.md): records JSON + one
+ * float32 vectors file per generation, swapped atomically. All logic
+ * (diffing, search, consolidation) is in core/brain.ts; the server owns
+ * the in-memory copy and is the sole writer.
+ */
+export interface BrainStore {
+	/** The stored snapshot, or an empty one (never throws). */
+	load(): BrainSnapshot;
+	save(snap: BrainSnapshot): void;
+}
+
+// ─── Embedder — text → L2-normalized vectors ───────────────────────────────
+
+export interface Embedder {
+	readonly model: string;
+	readonly dims: number;
+	/** "query" vs "passage": asymmetric models prefix queries. */
+	embed(texts: readonly string[], kind: "query" | "passage"): Promise<Float32Array[]>;
+}

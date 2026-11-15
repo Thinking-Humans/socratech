@@ -16,6 +16,7 @@ export * from "./journals.ts";
 export * from "./publish.ts";
 export * from "./notes.ts";
 export * from "./notes-ask.ts";
+export * from "./brain.ts";
 export { readRenderSettings, writeRenderSettings } from "../store/render-settings.ts";
 // The settings record + prompt overrides (settings-storage wave, 2026-09-19).
 // The *Record aliases keep the app/api/settings routes explicit about which

@@ -31,6 +31,8 @@ export const PATHS = {
 	debug: path.join(DATA_ROOT, "debug"),
 	/** Learn-in-public journals, one JSON file per journal (src/store/journals.ts). */
 	journals: path.join(DATA_ROOT, "journals"),
+	/** Brain store (docs/brain-store.md): records + vectors + local embedding model cache. */
+	brain: path.join(DATA_ROOT, "brain"),
 } as const;
 
 // ─── Models ────────────────────────────────────────────────────────────────

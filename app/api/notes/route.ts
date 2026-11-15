@@ -5,7 +5,7 @@
  *   GET ?daily=YYYY-MM-DD  { note } — that day's note, created when missing ("today" ok)
  *   PUT {path, content, ifMtime?}  { note } — 409 when the file changed on disk
  */
-import { NoteError, ensureDailyNote, listNotes, noteRoute, readNote, today, writeNote } from "@/src/server";
+import { NoteError, brainNoteSaved, ensureDailyNote, listNotes, noteRoute, readNote, today, writeNote } from "@/src/server";
 
 export const dynamic = "force-dynamic";
 
@@ -25,6 +25,8 @@ export async function PUT(req: Request) {
 		const body = (await req.json()) as Record<string, unknown>;
 		if (typeof body.path !== "string" || typeof body.content !== "string") throw new NoteError("path and content are required strings", "invalid");
 		const ifMtime = typeof body.ifMtime === "number" ? body.ifMtime : undefined;
-		return Response.json({ note: writeNote(body.path, body.content, ifMtime) });
+		const note = writeNote(body.path, body.content, ifMtime);
+		brainNoteSaved();
+		return Response.json({ note });
 	});
 }

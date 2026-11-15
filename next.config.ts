@@ -115,6 +115,8 @@ const nextConfig: NextConfig = {
 		"@earendil-works/pi-agent-core",
 		"pdfjs-dist", // sources v0: bundling breaks its node fake-worker path
 		"@napi-rs/canvas", // native binding — bundling breaks the .node require
+		"@huggingface/transformers", // brain store: onnxruntime-node native binding + model cache paths
+		"onnxruntime-node",
 		"@silvia-odwyer/photon-node", // CJS loads its adjacent WASM from disk
 		"@resvg/resvg-js", // native binding — same
 	],

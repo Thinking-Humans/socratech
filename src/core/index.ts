@@ -26,6 +26,8 @@ export * from "./improvisation.ts";
 export * from "./journal.ts";
 export * from "./journal-export.ts";
 export * from "./notes.ts";
+// brain.ts (brain store, 2026-11-15): pure parse/search/bundle/consolidation ops.
+export * from "./brain.ts";
 export * from "./render-settings.ts";
 
 export * from "./question-core.ts";
