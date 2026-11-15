@@ -493,8 +493,8 @@ fileSources: Record<string, string>;
 
 ### GraphSnapshot notebookSources
 
-srcId → the notebook behind a `notebook://` source (owner, 2026-11-15:
-notebooks are the graph's unit): a deep link + its title. Absent when
+srcId → the notebook behind a `notebook://` source (notebooks are
+the graph's unit): a deep link + its title. Absent when
 the notebook was deleted — the fileSources entry still stands.
 
 ```ts
