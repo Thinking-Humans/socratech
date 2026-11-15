@@ -63,6 +63,7 @@
  * camera never moves.
  */
 
+import { GRAPH_EMPTY_HINT } from "@/components/journal/journal-only";
 import { useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { NotesImportControl, NotesImportErrors, NotesImportNotices, useNotesImport } from "@/components/notes-import.tsx";
 import { PluginGraphActions } from "@/components/plugin-chrome";
@@ -1476,7 +1477,7 @@ export function GraphView({
 						<WaypointsIcon className="size-10 opacity-40" strokeWidth={1.25} />
 						<div className="text-lg font-medium text-foreground">Knowledge graph</div>
 						<div className="max-w-sm text-sm">
-							<p>Start a session to begin learning.</p>
+							<p>{GRAPH_EMPTY_HINT}</p>
 							<p className="mt-1 text-xs">Attach your material with the paperclip or drag and drop.</p>
 						</div>
 					</div>
