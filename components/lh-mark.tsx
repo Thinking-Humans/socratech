@@ -1,43 +1,55 @@
+"use client";
+
+import { useId } from "react";
+
 /**
- * LhMark — the app mark (owner's icon-no-padding.svg, 2026-09-17), inlined
- * as JSX so it rides along with the components (no network fetch, recolorable,
- * crisp at any size). 806×806 viewBox, no padding: sizing/padding is the
- * consumer's job. The gray path is the harness spiral; the ring is the
- * mark's own stroke in the strong line ink (white in dark, the foreground
- * in light).
+ * LhMark — the Socratech app mark: a profile bust of Socrates (bald dome,
+ * snub nose, curled beard). Inlined as JSX so it rides along with the
+ * components (no network fetch, recolorable, crisp at any size).
  *
- * Replaces the "LH" wordmark text in the sidebar band (also the traffic-light
- * gutter's resident in the merged desktop chrome).
+ * The detail lines are cut out through a mask, so the mark is a single
+ * fill in the strong line ink (white in dark, the foreground in light) and
+ * stays correct on any background — including the hover chip. Square
+ * viewBox, no padding: sizing/padding is the consumer's job. Canonical
+ * source: docs/assets/socratech-mark.svg (same paths).
+ *
+ * Name kept as LhMark: Socratech is a fork of LearnHarness, and the
+ * export is imported by the sidebar band.
  */
 export function LhMark({ className = "" }: { className?: string }) {
+	const mask = `socratech-mark-${useId().replace(/:/g, "")}`;
 	return (
-		<svg
-			viewBox="0 0 806 806"
-			className={className}
-			style={{ fillRule: "evenodd", clipRule: "evenodd", strokeLinejoin: "round", strokeMiterlimit: 2 }}
-			aria-hidden="true"
-		>
-			<g transform="matrix(1,0,0,1,-109.002299,-109.002299)">
-				<g transform="matrix(0.939904,0,0,0.939904,30.769428,30.766742)">
-					<g transform="matrix(-0.232199,0,0,0.232199,1384.403797,-416.791824)">
-						<g transform="matrix(0.573992,-2.142166,2.142166,0.573992,-5516.07298,4432.117471)">
-							<path
-								d="M1234.728,3305.937C871.642,3324.965 587,3624.915 587,3988.5C587,4365.734 893.266,4672 1270.5,4672C1647.734,4672 1954,4365.734 1954,3988.5C1954,3880.637 1928.472,3774.304 1879.503,3678.197L1794.243,3721.64C1836.356,3804.292 1858.31,3895.737 1858.31,3988.5C1858.31,4312.921 1594.921,4576.31 1270.5,4576.31C946.079,4576.31 682.69,4312.921 682.69,3988.5C682.69,3675.817 927.482,3417.86 1239.736,3401.496L1234.728,3305.937Z"
-								style={{ fill: "rgb(148,148,148)" }}
-							/>
-						</g>
-						<g transform="matrix(1.261034,-0,-0,1.261034,1170.373407,-2014.261188)">
-							<path
-								d="M1270.5,3305C893.266,3305 587,3611.266 587,3988.5C587,4365.734 893.266,4672 1270.5,4672C1647.734,4672 1954,4365.734 1954,3988.5C1954,3611.266 1647.734,3305 1270.5,3305ZM1270.5,3471.537C1555.819,3471.537 1787.463,3703.181 1787.463,3988.5C1787.463,4273.819 1555.819,4505.463 1270.5,4505.463C985.181,4505.463 753.537,4273.819 753.537,3988.5C753.537,3703.181 985.181,3471.537 1270.5,3471.537Z"
-								style={{ fill: "var(--lh-line-strong)" }}
-							/>
-						</g>
-						<g transform="matrix(1.261034,0,-0,1.261034,3139.627182,-45.007413)">
-							<circle cx="1270.5" cy="3988.5" r="683.5" style={{ fill: "var(--lh-line-strong)" }} />
-						</g>
+		<svg viewBox="41 62 450 450" className={className} aria-hidden="true">
+			<defs>
+				<mask id={mask} maskUnits="userSpaceOnUse" x="0" y="0" width="512" height="512">
+					<path fill="#fff" d="M 112 512 C 122 470, 150 440, 160 400 C 150 385, 128 372, 130 350 C 108 340, 104 312, 122 298 C 100 282, 104 252, 128 244 C 112 220, 124 190, 150 186 C 150 118, 212 70, 288 70 C 356 70, 404 112, 406 176 C 407 196, 404 206, 410 216 C 414 224, 410 232, 402 238 C 398 244, 396 250, 400 258 C 412 266, 430 280, 428 296 C 426 309, 410 310, 400 305 C 406 313, 406 319, 402 325 C 416 337, 424 360, 416 384 C 422 404, 416 424, 402 436 C 402 456, 386 472, 366 476 C 352 492, 328 496, 308 488 C 298 498, 296 506, 298 512 Z" />
+					<g fill="none" stroke="#000" strokeWidth={8} strokeLinecap="round">
+					<path d="M 362 236 Q 377 228 394 234" />
+					<path d="M 252 232 C 234 226, 224 244, 232 260 C 238 272, 252 272, 254 262" />
+					<path d="M 244 284 C 252 304, 266 318, 286 326" />
+					<path d="M 396 322 C 384 330, 368 330, 356 322" />
+					<path d="M 330 330 C 322 352, 340 366, 330 388" />
+					<path d="M 366 336 C 358 360, 376 374, 366 400" />
+					<path d="M 300 344 C 292 372, 312 392, 300 420" />
+					<path d="M 176 204 C 192 216, 194 234, 182 248" />
+					<path d="M 166 274 C 182 286, 184 304, 172 318" />
 					</g>
-				</g>
-			</g>
+				</mask>
+			</defs>
+			<rect width="512" height="512" mask={`url(#${mask})`} style={{ fill: "var(--lh-line-strong)" }} />
 		</svg>
+	);
+}
+
+/**
+ * The wordmark beside the mark: "Socratech" in the title serif, with a
+ * small "by Thinking Humans" byline underneath.
+ */
+export function SocratechWordmark({ className = "" }: { className?: string }) {
+	return (
+		<span className={`flex flex-col leading-none ${className}`}>
+			<span className="font-title text-[15px] tracking-tight text-foreground">Socratech</span>
+			<span className="mt-0.5 text-[9px] uppercase tracking-[0.08em] text-muted-foreground">by Thinking Humans</span>
+		</span>
 	);
 }

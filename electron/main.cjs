@@ -321,7 +321,7 @@ function createWindow(url) {
 	const win = new BrowserWindow({
 		width: 1440,
 		height: 900,
-		title: PRODUCT_NAME,
+		title: "Socratech", // display name; PRODUCT_NAME stays LearnHarness so the userData dir is unchanged
 		// Merged chrome (owner, 2026-09-17): the system title bar is gone;
 		// the app's own 60px header bands ARE the title bar. The traffic
 		// lights float over the sidebar's LH wordmark band, vertically

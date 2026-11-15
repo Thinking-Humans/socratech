@@ -1,12 +1,14 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/lh_banner_dark.png">
-    <source media="(prefers-color-scheme: light)" srcset="docs/assets/lh_banner_light.png">
-    <img src="docs/assets/lh_banner_light.png" alt="LearnHarness" width="640">
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/socratech_banner_dark.png">
+    <source media="(prefers-color-scheme: light)" srcset="docs/assets/socratech_banner_light.png">
+    <img src="docs/assets/socratech_banner_light.png" alt="Socratech by Thinking Humans" width="640">
   </picture>
 </p>
 
 <p align="center"><strong>An agent harness for learning.</strong></p>
+
+> **Socratech is a modified fork of [LearnHarness](https://github.com/amosblomqvist/learnharness) by Amos Blomqvist and contributors**, maintained by Thinking Humans. Modified since 2026-11-13; tracks upstream (currently v0.6.1). Like the original, it is licensed under the [GNU AGPL-3.0](LICENSE). Socratech is not affiliated with or endorsed by the LearnHarness project.
 
 <p align="center">
   <a href="https://learnharness.ai">Download</a> ·
