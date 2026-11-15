@@ -59,9 +59,9 @@ Chats, graph records, settings, and credentials live on your machine. Packaged d
 
 | OS | Learning-data folder |
 | --- | --- |
-| macOS | `~/Library/Application Support/LearnHarness/data` |
-| Windows | `%APPDATA%\LearnHarness\data` |
-| Linux | `$XDG_CONFIG_HOME/LearnHarness/data`, or `~/.config/LearnHarness/data` |
+| macOS | `~/Library/Application Support/Socratech/data` |
+| Windows | `%APPDATA%\Socratech\data` |
+| Linux | `$XDG_CONFIG_HOME/Socratech/data`, or `~/.config/Socratech/data` |
 
 API-key files sit beside `data`, not inside it. They are plaintext with restrictive file permissions, not an encrypted vault. Keep complete profiles private; do not share credential files or raw debug captures in bug reports.
 
