@@ -109,3 +109,32 @@ Settings → Claude → **Connect Claude** sets up every local client found:
   origin succeeds.
 A new token needs Connect Claude again. claude.ai / Claude in Chrome are
 not covered (they cannot reach loopback).
+
+## Real-Chrome test — 2026-11-16
+Chrome for Testing 152, extension loaded unpacked, sandboxed server
+(own data dir, HOME, CLAUDE_CONFIG_DIR). 30/30 scripted checks plus the
+real toolbar-click path on Wikipedia, Python docs, MDN and GitHub.
+Fixes it drove:
+- Readability strips `class` by default → code languages were lost:
+  `keepClasses: true` in the tab and on the server.
+- Bare `<pre>` (GitHub, Sphinx) became prose → every `<pre>` is a fence;
+  language from `language-`/`lang-`, `brush:` (MDN), `highlight-` (Sphinx),
+  `highlight-source-` (GitHub) on the block or its wrappers.
+- MDN renders code in `<mdn-code-example>` shadow roots, which a DOM clone
+  drops and the isolated world can't see → capture runs in the MAIN world
+  and copies shadow-root `<pre>`s into the clone.
+- Wikipedia's `div.mw-heading` wrappers made Readability drop headings →
+  unwrap a heading's lone wrapper first. Heading chrome (`[edit]`, `¶`,
+  self-links) stripped.
+- `>>>` sessions become runnable Python with the printed lines as output.
+- `###` and ~4k-char paragraphs start new cells; References / External
+  links / Further reading sections are dropped.
+- Exercise failures were silent → a note cell says why.
+- Connect: the extension acks at once (first token check can be slow),
+  so "not installed" isn't reported for a slow server.
+- The extension no longer falls back to other localhost ports (it could
+  have sent a page to an unrelated local app).
+- Title prefers the page's `<h1>` over "Title | Site"; clip date is local.
+
+After updating the extension's files, press ↻ on its card in
+`chrome://extensions` — Chrome can keep running the old service worker.

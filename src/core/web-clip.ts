@@ -14,6 +14,8 @@ export interface ClipCell {
 	role: Extract<JournalCellRole, "aside" | "code">;
 	source: string;
 	lang?: string;
+	/** Code cells from a `>>>` session: the printed results, as the cell's output. */
+	output?: string;
 	/** -1 for the source-link cell. */
 	section: number;
 }
@@ -32,12 +34,59 @@ export interface ClipPlan {
 
 /** A page bigger than this many cells folds its tail into one last cell. */
 export const MAX_CLIP_CELLS = 150;
+/** Prose longer than this splits at paragraph breaks into several cells. */
+export const MAX_PROSE_CELL_CHARS = 4000;
 /** Exercise prompt budget per section and overall (characters). */
 const SECTION_PROMPT_CHARS = 6000;
 const TOTAL_PROMPT_CHARS = 60_000;
 
 const FENCE_RE = /^(\s{0,3})(`{3,}|~{3,})\s*([^\s`]*)/;
-const SPLIT_HEADING_RE = /^#{1,2}\s+(.+?)\s*#*\s*$/;
+/** `#`/`##` start a section (exercises follow sections). */
+const SECTION_HEADING_RE = /^#{1,2}\s+(.+?)\s*#*\s*$/;
+/** `###` starts a new cell inside the section. */
+const SUBHEADING_RE = /^#{3,6}\s+\S/;
+/** Back matter that is not reading: dropped with its section. */
+const BACK_MATTER_RE = /^(references|notes and references|external links|further reading|bibliography|citations|footnotes|sources)$/i;
+
+/** Heading chrome sites add: permalink pilcrows, empty anchors, wiki [edit]
+ *  links, and headings wrapped in a link to themselves. */
+export function cleanHeadingLine(line: string): string {
+	return line
+		.replace(/\\?\[\s*\[edit\]\([^)]*\)\s*\\?\]/gi, "")
+		.replace(/\[(?:¶|#|§|)\]\(#[^)]*\)/g, "")
+		.replace(/\[([^\]]+)\]\(#[^)\s]*\)/g, "$1")
+		.replace(/\s+$/, "");
+}
+
+const PROMPT_RE = /^(>>>|\.\.\.)( |$)/;
+
+/** A `>>>` session → { code, output }; null when the block is not one. */
+export function splitDoctest(body: string): { code: string; output: string } | null {
+	const lines = body.split("\n");
+	if (!lines.some((l) => l.startsWith(">>> "))) return null;
+	const code: string[] = [];
+	const output: string[] = [];
+	for (const line of lines) {
+		if (PROMPT_RE.test(line)) code.push(line.replace(PROMPT_RE, ""));
+		else if (line.trim()) output.push(line);
+	}
+	return { code: code.join("\n").replace(/\n+$/, ""), output: output.join("\n") };
+}
+
+/** Prose → chunks of at most `max` chars, split at blank lines. */
+function chunkProse(text: string, max: number): string[] {
+	if (text.length <= max) return [text];
+	const chunks: string[] = [];
+	let current = "";
+	for (const para of text.split(/\n{2,}/)) {
+		if (current && current.length + para.length + 2 > max) {
+			chunks.push(current);
+			current = para;
+		} else current = current ? `${current}\n\n${para}` : para;
+	}
+	if (current) chunks.push(current);
+	return chunks;
+}
 
 export function clipSourceCell(url: string, title: string, clippedAt: string): string {
 	const safeTitle = title.replace(/[[\]]/g, "") || url;
@@ -46,14 +95,17 @@ export function clipSourceCell(url: string, title: string, clippedAt: string): s
 
 /**
  * Markdown → cells: a source-link aside, then the page split at `#`/`##`
- * headings into sections; inside a section, prose becomes an aside cell and
- * each fenced code block its own code cell (language kept).
+ * headings into sections (back matter like References dropped). Inside a
+ * section, `###` headings and long prose start new aside cells; each fenced
+ * code block is its own code cell (language kept; a `>>>` session becomes
+ * runnable code with its printed results as output).
  */
 export function pageToCells(markdown: string, meta: { url: string; title: string; clippedAt: string }): ClipPlan {
 	const cells: ClipCell[] = [{ role: "aside", source: clipSourceCell(meta.url, meta.title, meta.clippedAt), section: -1 }];
 	const sections: ClipSection[] = [];
 
 	let section = -1;
+	let skipping = false;
 	let prose: string[] = [];
 	let code: string[] | null = null;
 	let fence = "";
@@ -73,23 +125,27 @@ export function pageToCells(markdown: string, meta: { url: string; title: string
 		prose = [];
 		if (!text.trim()) return;
 		note(text);
-		cells.push({ role: "aside", source: text, section });
+		for (const chunk of chunkProse(text, MAX_PROSE_CELL_CHARS)) cells.push({ role: "aside", source: chunk, section });
+	};
+	const flushCode = (body: string) => {
+		if (!body.trim()) return;
+		const doctest = splitDoctest(body);
+		const source = doctest ? doctest.code : body;
+		const cellLang = lang || (doctest ? "python" : "");
+		note(`\`\`\`${cellLang}\n${body}\n\`\`\``);
+		cells.push({ role: "code", source, ...(cellLang ? { lang: cellLang } : {}), ...(doctest?.output ? { output: doctest.output } : {}), section });
 	};
 
-	for (const line of markdown.replace(/\r\n?/g, "\n").split("\n")) {
+	for (const raw of markdown.replace(/\r\n?/g, "\n").split("\n")) {
 		if (code) {
-			const close = FENCE_RE.exec(line);
+			const close = FENCE_RE.exec(raw);
 			if (close && close[2]!.startsWith(fence) && close[3] === "") {
-				const body = code.join("\n");
-				if (body.trim()) {
-					note(`\`\`\`${lang}\n${body}\n\`\`\``);
-					cells.push({ role: "code", source: body, ...(lang ? { lang } : {}), section });
-				}
+				if (!skipping) flushCode(code.join("\n"));
 				code = null;
-			} else code.push(line);
+			} else code.push(raw);
 			continue;
 		}
-		const open = FENCE_RE.exec(line);
+		const open = FENCE_RE.exec(raw);
 		if (open) {
 			flushProse();
 			code = [];
@@ -97,21 +153,16 @@ export function pageToCells(markdown: string, meta: { url: string; title: string
 			lang = open[3]!.toLowerCase();
 			continue;
 		}
-		const heading = SPLIT_HEADING_RE.exec(line);
+		const line = /^#{1,6}\s/.test(raw) ? cleanHeadingLine(raw) : raw;
+		const heading = SECTION_HEADING_RE.exec(line);
 		if (heading) {
 			flushProse();
-			startSection(heading[1]!);
-		}
-		prose.push(line);
+			skipping = BACK_MATTER_RE.test(heading[1]!.trim());
+			if (!skipping) startSection(heading[1]!);
+		} else if (SUBHEADING_RE.test(line)) flushProse();
+		if (!skipping) prose.push(line);
 	}
-	if (code) {
-		// An unclosed fence: keep what was there as code.
-		const body = code.join("\n");
-		if (body.trim()) {
-			note(`\`\`\`${lang}\n${body}\n\`\`\``);
-			cells.push({ role: "code", source: body, ...(lang ? { lang } : {}), section });
-		}
-	}
+	if (code && !skipping) flushCode(code.join("\n")); // an unclosed fence: keep it as code
 	flushProse();
 
 	if (cells.length > MAX_CLIP_CELLS) {

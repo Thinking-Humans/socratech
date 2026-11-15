@@ -5,6 +5,9 @@ window.addEventListener("message", (event) => {
 	if (event.source !== window || event.origin !== location.origin) return;
 	const data = event.data;
 	if (!data || data.type !== "socratech-clip-setup" || typeof data.token !== "string") return;
+	// Ack at once, so the page can tell "installed" from "not installed"
+	// while the token check (a first request can be slow) runs.
+	window.postMessage({ type: "socratech-clip-connecting", nonce: data.nonce }, location.origin);
 	chrome.runtime.sendMessage({ type: "connect", server: location.origin, token: data.token }, (reply) => {
 		window.postMessage(
 			{ type: "socratech-clip-connected", nonce: data.nonce, ok: reply?.ok === true, error: reply?.error },

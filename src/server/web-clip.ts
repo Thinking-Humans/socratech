@@ -18,22 +18,52 @@ import { resolveRoleSpec } from "../core/settings-resolution.ts";
 import { strongTextStream } from "./notes-ask.ts";
 import { stores } from "./stores.ts";
 
+/** First words of the note left when exercise writing fails. */
+export const CLIP_EXERCISES_FAILED = "> Exercises could not be written:";
+
 /** Largest page accepted (characters of html or markdown). */
 export const MAX_CLIP_CHARS = 2_000_000;
 const FETCH_TIMEOUT_MS = 30_000;
 
 const turndown = new TurndownService({ headingStyle: "atx", codeBlockStyle: "fenced", bulletListMarker: "-" });
-// Keep the code block's language: <pre><code class="language-py">.
-turndown.addRule("fencedWithLang", {
-	filter: (node) => node.nodeName === "PRE" && node.firstChild?.nodeName === "CODE",
+/** A code block's language from its classes or its wrappers' (up to three
+ *  levels): language-x / lang-x (most sites), "brush: x" (MDN),
+ *  highlight-x (Sphinx: python docs), highlight-source-x (GitHub). */
+export function codeLanguage(pre: Element): string {
+	const classes: string[] = [];
+	const code = pre.querySelector?.("code");
+	if (code) classes.push(code.getAttribute("class") ?? "");
+	let el: Element | null = pre;
+	for (let i = 0; el && i < 4; i++, el = el.parentElement) classes.push(el.getAttribute?.("class") ?? "");
+	const all = classes.join(" ");
+	const m =
+		/(?:^|\s)(?:language|lang)-([\w+#-]+)/.exec(all) ??
+		/brush:\s*([\w+#-]+)/.exec(all) ??
+		/(?:^|\s)highlight-source-([\w+#-]+)/.exec(all) ??
+		/(?:^|\s)highlight-(?!source)([a-z][\w+#-]*)/.exec(all);
+	const lang = (m?.[1] ?? "").toLowerCase();
+	if (/^python\d?$|^py(?:thon)?3?$|^pycon$/.test(lang)) return "python";
+	if (lang === "default" || lang === "none" || lang === "text" || lang === "plaintext") return "";
+	return lang;
+}
+
+// Every <pre> becomes a fenced block — with or without an inner <code>
+// (GitHub and Sphinx render bare <pre>) — keeping its language.
+turndown.addRule("fencedPre", {
+	filter: (node) => node.nodeName === "PRE",
 	replacement: (_content, node) => {
-		const codeEl = node.firstChild as HTMLElement;
-		const cls = `${codeEl.getAttribute?.("class") ?? ""} ${(node as HTMLElement).getAttribute?.("class") ?? ""}`;
-		const lang = /(?:language|lang)-([\w+#-]+)/.exec(cls)?.[1] ?? "";
-		const body = (codeEl.textContent ?? "").replace(/\n$/, "");
+		const el = node as unknown as Element;
+		const body = (el.textContent ?? "").replace(/\n$/, "");
+		if (!body.trim()) return "";
 		const fence = body.includes("```") ? "~~~~" : "```";
-		return `\n\n${fence}${lang}\n${body}\n${fence}\n\n`;
+		return `\n\n${fence}${codeLanguage(el)}\n${body}\n${fence}\n\n`;
 	},
+});
+// Heading chrome: wiki [edit] links, Sphinx/GitHub permalink anchors.
+// (A rule, not turndown.remove: the built-in link rule would win over a remove.)
+turndown.addRule("headingChrome", {
+	filter: (node) => /(?:^|\s)(?:mw-editsection|headerlink|anchor|heading-link)(?:\s|$)/.test((node as unknown as Element).getAttribute?.("class") ?? ""),
+	replacement: () => "",
 });
 
 /** Page html → { title, markdown }: Readability when it finds an article,
@@ -43,7 +73,7 @@ export function clipHtmlToMarkdown(html: string): { title: string; markdown: str
 	let title = "";
 	let body = html;
 	try {
-		const article = new Readability(document.cloneNode(true) as unknown as Document).parse();
+		const article = new Readability(document.cloneNode(true) as unknown as Document, { keepClasses: true }).parse();
 		if (article?.content && article.content.length > 200) {
 			title = article.title ?? "";
 			body = article.content;
@@ -127,13 +157,18 @@ export async function clipPage(input: ClipInput): Promise<ClipResult> {
 
 	const title = (input.title?.trim() || page.title.trim() || url.hostname).slice(0, 200);
 	const now = new Date().toISOString();
-	const plan = pageToCells(page.markdown, { url: url.href, title, clippedAt: now });
+	// The reader's calendar day, not UTC's (the source cell shows the date).
+	const plan = pageToCells(page.markdown, { url: url.href, title, clippedAt: new Date().toLocaleDateString("en-CA") });
 
 	let journal = newJournal({ id: newJournalId(), title, tags: ["clip"], now });
 	const lastCellOfSection = new Map<number, string>();
 	for (const cell of plan.cells) {
 		const id = newCellId();
-		journal = appendCell(journal, { id, role: cell.role, source: cell.source, ...(cell.lang ? { lang: cell.lang } : {}), publish: false }, now);
+		journal = appendCell(
+			journal,
+			{ id, role: cell.role, source: cell.source, ...(cell.lang ? { lang: cell.lang } : {}), ...(cell.output ? { output: cell.output } : {}), publish: false },
+			now,
+		);
 		lastCellOfSection.set(cell.section, id);
 	}
 	journal = stores.journalStore.createJournal(journal);
@@ -143,6 +178,13 @@ export async function clipPage(input: ClipInput): Promise<ClipResult> {
 	if (!writer) return { journal, exercises: "no-model", done: Promise.resolve() };
 	const done = writeExercises(journal.id, title, url.href, plan.sections, lastCellOfSection, writer).catch((err) => {
 		console.error("[web-clip] exercises failed:", err);
+		// Say so in the notebook — the clip promised exercises.
+		const reason = (err instanceof Error ? err.message : String(err)).replace(/^\*\(failed: |\)\*$/g, "").trim();
+		try {
+			if (stores.journalStore.getJournal(journal.id)) addJournalCell(journal.id, { role: "aside", source: `${CLIP_EXERCISES_FAILED} ${reason}. Add an agent cell to ask for practice once the model works.` });
+		} catch {
+			// notebook gone or unwritable — the log above has it
+		}
 	});
 	return { journal, exercises: "queued", done };
 }

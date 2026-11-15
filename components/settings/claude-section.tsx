@@ -45,10 +45,16 @@ function connectExtension(token: string): Promise<ConnectRow> {
 		};
 		const onMessage = (event: MessageEvent) => {
 			const data = event.data as { type?: string; nonce?: string; ok?: boolean; error?: string } | null;
-			if (event.source !== window || data?.type !== "socratech-clip-connected" || data.nonce !== nonce) return;
-			finish(data.ok ? { status: "connected" } : { status: "failed", detail: data.error });
+			if (event.source !== window || data?.nonce !== nonce) return;
+			if (data.type === "socratech-clip-connecting") {
+				// Installed: now wait for its token check (a first request can be slow).
+				clearTimeout(timer);
+				timer = setTimeout(() => finish({ status: "failed", detail: "the extension did not answer" }), 30_000);
+			} else if (data.type === "socratech-clip-connected") {
+				finish(data.ok ? { status: "connected" } : { status: "failed", detail: data.error });
+			}
 		};
-		const timer = setTimeout(() => finish({ status: "not-installed" }), 4000);
+		let timer = setTimeout(() => finish({ status: "not-installed" }), 1500);
 		window.addEventListener("message", onMessage);
 		window.postMessage({ type: "socratech-clip-setup", token, nonce }, window.location.origin);
 	});

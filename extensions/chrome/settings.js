@@ -1,7 +1,5 @@
 // Shared by popup, options and the service worker (docs/web-clip.md).
 export const DEFAULTS = { server: "http://localhost:3000", token: "" };
-/** Tried in order when the saved server does not answer: browser mode, then the desktop app's fixed port. */
-export const FALLBACK_SERVERS = ["http://localhost:3000", "http://127.0.0.1:47823"];
 
 export async function loadSettings() {
 	const saved = await chrome.storage.local.get(["server", "token"]);
