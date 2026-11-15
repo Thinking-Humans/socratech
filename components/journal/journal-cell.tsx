@@ -132,6 +132,23 @@ export interface JournalCellProps {
 	/** The learning bar: rating, cross-check, graph. */
 	onRate: (level: import("@/src/core").UnderstandingLevel | null) => void;
 	onJournal: (j: import("@/src/core").Journal) => void;
+	/** The notebook's undo/redo — reached from edit mode once the text box's own history is empty. */
+	onHistory: (direction: "undo" | "redo") => void;
+}
+
+/**
+ * Replace [a, b) of the text box through the browser's own editing path, so
+ * Ctrl/⌘+Z undoes it like typing. False when the browser refuses
+ * (execCommand unsupported) — the caller then sets the value itself.
+ */
+function editText(el: HTMLTextAreaElement, a: number, b: number, text: string): boolean {
+	el.focus();
+	el.setSelectionRange(a, b);
+	try {
+		return document.execCommand("insertText", false, text);
+	} catch {
+		return false;
+	}
 }
 
 export function JournalCellView({
@@ -153,6 +170,7 @@ export function JournalCellView({
 	streaming,
 	onRate,
 	onJournal,
+	onHistory,
 }: JournalCellProps) {
 	const [source, setSource] = useState(cell.source);
 	const [lang, setLang] = useState(cell.lang ?? "");
@@ -176,12 +194,14 @@ export function JournalCellView({
 			const named = isMediaName(file.name) ? file : new File([file], `pasted-${Date.now()}.${file.type.split("/")[1] || "png"}`, { type: file.type });
 			try {
 				const { markdown } = await journalApi.uploadMedia(journalId, named);
-				setSource((prev) => {
-					const before = prev.slice(0, at);
-					const insert = `${before && !before.endsWith("\n") ? "\n" : ""}${markdown}\n`;
-					at = before.length + insert.length;
-					return `${before}${insert}${prev.slice(before.length)}`;
-				});
+				const box = sourceRef.current;
+				const current = box?.value ?? source;
+				const before = current.slice(0, at);
+				const insert = `${before && !before.endsWith("\n") ? "\n" : ""}${markdown}\n`;
+				if (!(box && editText(box, before.length, before.length, insert))) {
+					setSource((prev) => `${prev.slice(0, before.length)}${insert}${prev.slice(before.length)}`);
+				}
+				at = before.length + insert.length;
 			} catch (err) {
 				setUploadError(err instanceof Error ? err.message : String(err));
 			} finally {
@@ -284,8 +304,12 @@ export function JournalCellView({
 		if (!text.trim()) return;
 		const before = source.slice(0, at);
 		const sep = before && !before.endsWith("\n") ? "\n" : "";
-		const next = `${before}${sep}${text}${source.slice(at)}`;
-		setSource(next);
+		const box = sourceRef.current;
+		if (box && editText(box, at, at, sep + text)) {
+			box.setSelectionRange(at + sep.length, at + sep.length + text.length);
+			return;
+		}
+		setSource(`${before}${sep}${text}${source.slice(at)}`);
 		requestAnimationFrame(() => {
 			const el = sourceRef.current;
 			if (!el) return;
@@ -333,9 +357,16 @@ export function JournalCellView({
 			claim();
 			const el = sourceRef.current!;
 			const { selectionStart: a, selectionEnd: b } = el;
-			const next = `${source.slice(0, a)}    ${source.slice(b)}`;
-			setSource(next);
+			if (editText(el, a, b, "    ")) return;
+			setSource(`${source.slice(0, a)}    ${source.slice(b)}`);
 			requestAnimationFrame(() => el.setSelectionRange(a + 4, a + 4));
+		} else if (e.target === sourceRef.current && (eventMatchesAction(native, "journal-undo") || eventMatchesAction(native, "journal-redo"))) {
+			// The text box's own history first; when it has nothing left, the
+			// key leaves the cell and steps the notebook's history instead.
+			const direction = eventMatchesAction(native, "journal-undo") ? "undo" : "redo";
+			if (document.queryCommandEnabled(direction)) return;
+			claim();
+			void commit("render").then(() => onHistory(direction));
 		}
 	};
 

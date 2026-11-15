@@ -37,6 +37,7 @@ import { getGraph, mergeFindings, type GraphDeps } from "../core/graph.ts";
 import { deriveStandings, effectiveJudgments, standingOf, type IdeaStanding } from "../core/improvisation.ts";
 import { settleGraphLayout } from "../core/layout-settle.ts";
 import { stores } from "./stores.ts";
+import { clipPage } from "./web-clip.ts";
 
 /** The provenance source every Claude-made write carries (a notes-style
  *  source id: the snapshot resolves it to SOURCE_LABEL). */
@@ -276,6 +277,40 @@ export function createGymMcpServer(deps: GymMcpDeps = stores): McpServer {
 			if (input.sameAs !== undefined) return text(`Linked to [${input.sameAs}] — the phrasing joined it.`);
 			const created = getGraph(graphStore).nodes.find((n) => !before.has(n.id));
 			return text(`Added [${created?.id ?? "?"}] ${input.name} — provisional until improvised.`);
+		},
+	);
+
+	server.registerTool(
+		"import_page_as_notebook",
+		{
+			description:
+				"Clip a web page into the learner's vault as a new notebook (docs/web-clip.md): the page's sections become " +
+				"private cells with a source link, its code blocks runnable code cells, and exercise cells follow each " +
+				"section shortly after (written in the background). Pass the page's html or markdown when you have it " +
+				"(logged-in or JavaScript-rendered pages); with only a url the app fetches the page itself.",
+			inputSchema: {
+				url: z.string().url().describe("The page's address (http or https)."),
+				title: z.string().optional().describe("The notebook title. Default: the page's title."),
+				html: z.string().optional().describe("The page (or its article) as HTML."),
+				markdown: z.string().optional().describe("The page as markdown. Wins over html."),
+			},
+		},
+		async (input) => {
+			try {
+				const { journal, exercises } = await clipPage(input);
+				const note =
+					exercises === "queued"
+						? "Exercise cells are being written now."
+						: exercises === "no-model"
+							? "No exercises: no strong model is set (Settings → Models)."
+							: "No exercises: the page had no sections.";
+				return text(
+					JSON.stringify({ id: journal.id, title: journal.title, path: `/notebook/${journal.id}`, cells: journal.cells.length, exercises }) +
+						`\nAdded notebook "${journal.title}" (${journal.cells.length} cells). ${note}`,
+				);
+			} catch (err) {
+				return refuse(err instanceof Error ? err.message : String(err));
+			}
 		},
 	);
 

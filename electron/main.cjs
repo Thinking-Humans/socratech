@@ -182,6 +182,19 @@ function freePort() {
 	});
 }
 
+/** The desktop server's fixed port (web clip, owner 2026-11-15): the Chrome
+ *  extension saves one server URL, so the port must survive restarts. Taken
+ *  → any free port (the extension then needs the new URL from Settings). */
+const PREFERRED_SERVER_PORT = 47823;
+
+function preferredPort() {
+	return new Promise((resolve) => {
+		const srv = net.createServer();
+		srv.once("error", () => freePort().then(resolve, () => resolve(0)));
+		srv.listen(PREFERRED_SERVER_PORT, "127.0.0.1", () => srv.close(() => resolve(PREFERRED_SERVER_PORT)));
+	});
+}
+
 /** BYOK keys: auth.json in userData, flat {VAR: value} map, 0600 —
  *  SERVER-MANAGED since the auth-keys wave (2026-09-19). This shell no
  *  longer reads or injects it: the child gets LH_AUTH_FILE below and does
@@ -690,7 +703,7 @@ async function main() {
 	// spawn, no packaging, full HMR. The rest of this shell still applies
 	// (guards, menu, single instance).
 	const devUrl = process.env.LH_DEV_URL;
-	const url = devUrl ?? `http://127.0.0.1:${await freePort()}`;
+	const url = devUrl ?? `http://127.0.0.1:${await preferredPort()}`;
 	if (!devUrl) {
 		desktopAPISecret = randomBytes(32).toString("hex");
 		const ownedOrigin = new URL(url).origin;

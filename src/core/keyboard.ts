@@ -55,7 +55,10 @@ export type KeyAction =
 	| "journal-rate-own"
 	| "journal-rate-helped"
 	| "journal-rate-stuck"
-	| "journal-extract-cell";
+	| "journal-extract-cell"
+	| "journal-delete-cell"
+	| "journal-undo"
+	| "journal-redo";
 
 /** Where the cheat sheet groups an action (display only — dispatch is
  *  global; a seam that isn't mounted simply no-ops). */
@@ -137,6 +140,12 @@ export const KEYBOARD_ACTIONS: readonly KeyActionDef[] = [
 	{ id: "journal-rate-helped", label: "Rate: did it with help", scope: "journal", binding: "2", surfaceOwned: true },
 	{ id: "journal-rate-stuck", label: "Rate: couldn't understand, even with help (explains prerequisites)", scope: "journal", binding: "3", surfaceOwned: true },
 	{ id: "journal-extract-cell", label: "Read the notebook into the graph", scope: "journal", binding: "g", surfaceOwned: true },
+	// Esc then D deletes; undo/redo cover cell edits, adds, deletes and moves.
+	// In edit mode the text box's own undo goes first; once it has nothing
+	// left, the same key falls through to the notebook's.
+	{ id: "journal-delete-cell", label: "Delete the focused cell (command mode)", scope: "journal", binding: "d", surfaceOwned: true },
+	{ id: "journal-undo", label: "Undo (cell edits, adds, deletes, moves)", scope: "journal", binding: "mod+z", surfaceOwned: true },
+	{ id: "journal-redo", label: "Redo", scope: "journal", binding: "mod+shift+z", surfaceOwned: true },
 ];
 
 export type KeymapAction = KeyAction | `plugin:${string}:${string}`;

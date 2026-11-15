@@ -17,6 +17,7 @@ import {
 	moveCell,
 	newJournal,
 	removeCell,
+	restoreCell,
 	updateCell,
 	updateJournalMeta,
 	upsertOriginCell,
@@ -37,7 +38,7 @@ import {
 	runnableLang,
 	type InlineAskInput,
 } from "../core/journal-code.ts";
-import type { CellGraphState, CellUnderstanding, Journal } from "../core/contracts/journal.ts";
+import { UNDERSTANDING_LEVELS, type CellGraphState, type CellUnderstanding, type Journal, type JournalCell } from "../core/contracts/journal.ts";
 import { searchJournals, type JournalSearchHit } from "../core/journal-search.ts";
 import type { ChatStore, JournalStore } from "../core/ports.ts";
 import { restartKernel, runCode, type RunResult } from "./code-runner.ts";
@@ -143,6 +144,11 @@ export function moveJournalCell(id: string, cellId: string, toIndex: number): Jo
 	return mutate(id, (j, now) => moveCell(j, cellId, toIndex, now));
 }
 
+/** Undo of a delete / redo of an add: the whole cell back at `index`. */
+export function restoreJournalCell(id: string, cell: JournalCell, index: number): Journal {
+	return mutate(id, (j, now) => restoreCell(j, cell, index, now));
+}
+
 export function deleteJournal(id: string): boolean {
 	const deleted = stores.journalStore.deleteJournal(id);
 	if (deleted) {
@@ -224,6 +230,41 @@ export function parseNewCell(body: Body): { init: Omit<NewCellInit, "id" | "orig
 		},
 		...(afterId !== undefined ? { afterId } : {}),
 	};
+}
+
+/** `{restore: <cell>, index}` — a cell the client held from before a delete. */
+export function parseRestoreCell(body: Body): { cell: JournalCell; index: number } | null {
+	const raw = body.restore;
+	if (raw === undefined) return null;
+	const c = asBody(raw);
+	const id = optString(c, "id");
+	if (!id || !/^[\w-]{1,80}$/.test(id)) throw new JournalError("restore.id is missing or malformed", "invalid");
+	const role = optString(c, "role");
+	if (!isJournalCellRole(role)) throw new JournalError(`Unknown cell role "${String(role)}".`, "invalid");
+	const index = body.index;
+	if (typeof index !== "number" || !Number.isFinite(index)) throw new JournalError("index must be a number", "invalid");
+	const lang = optString(c, "lang");
+	const output = optString(c, "output");
+	const exec = c.executionCount;
+	const createdAt = optString(c, "createdAt") ?? new Date().toISOString();
+	const u = c.understanding as Partial<CellUnderstanding> | undefined;
+	const understanding =
+		u && typeof u === "object" && UNDERSTANDING_LEVELS.includes(u.level as never) && typeof u.hash === "string" && typeof u.at === "string" ? (u as CellUnderstanding) : undefined;
+	const origin = c.origin as JournalCell["origin"];
+	const cell: JournalCell = {
+		id,
+		role,
+		source: optString(c, "source") ?? "",
+		...(lang ? { lang } : {}),
+		...(output ? { output } : {}),
+		...(typeof exec === "number" && exec > 0 ? { executionCount: Math.trunc(exec) } : {}),
+		publish: optBool(c, "publish") ?? false,
+		...(origin && typeof origin === "object" && typeof origin.chatId === "string" && typeof origin.toolCallId === "string" ? { origin } : {}),
+		...(understanding ? { understanding } : {}),
+		createdAt,
+		updatedAt: createdAt,
+	};
+	return { cell, index };
 }
 
 export function parseCellPatch(body: Body): { patch: CellPatch; ifUpdatedAt?: string } {

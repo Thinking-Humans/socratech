@@ -4,7 +4,7 @@
  * journal, only the one change. Every mutation returns the fresh journal.
  */
 
-import type { CellPatch, InlineAskInput, MarimoRedefinition, UnderstandingCheck, UnderstandingLevel, Journal, JournalCellRole, JournalMetaPatch, JournalSummary, PublishPlan, PublishResult } from "@/src/core";
+import type { CellPatch, InlineAskInput, MarimoRedefinition, UnderstandingCheck, UnderstandingLevel, Journal, JournalCellRole, JournalMetaPatch, JournalSummary, PublishPlan, PublishResult, JournalCell } from "@/src/core";
 
 export type { PublishPlan, PublishResult };
 
@@ -88,6 +88,7 @@ export const journalApi = {
 	patchCell: async (id: string, cellId: string, patch: CellPatch, ifUpdatedAt?: string) =>
 		(await call<One>(cellUrl(id, cellId), "PATCH", { ...patch, ...(ifUpdatedAt ? { ifUpdatedAt } : {}) })).journal,
 	moveCell: async (id: string, cellId: string, toIndex: number) => (await call<One>(cellUrl(id, cellId), "PATCH", { toIndex })).journal,
+	restoreCell: async (id: string, cell: JournalCell, index: number) => (await call<One>(`${base}/${id}/cells`, "POST", { restore: cell, index })).journal,
 	deleteCell: async (id: string, cellId: string) => (await call<One>(cellUrl(id, cellId), "DELETE")).journal,
 	/** Run a code cell; the journal comes back with the cell's output + run number. */
 	runCell: async (id: string, cellId: string) => call<{ journal: Journal; run: CellRun }>(`${cellUrl(id, cellId)}/run`, "POST"),
