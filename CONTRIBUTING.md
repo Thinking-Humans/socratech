@@ -1,57 +1,49 @@
-# Contributing to LearnHarness
+# Contributing to Socratech
 
-Bug reports, focused fixes, documentation, reviews, and testing are welcome. LearnHarness is a maintainer-led project with a deliberate core learning experience.
+Bug reports, focused fixes, documentation, reviews and testing are welcome. Socratech is maintained by Thinking Humans.
 
 ## Project direction
 
-Discuss meaningful changes to the project’s vision, teaching methodology, agent behavior, core architecture, or major workflows with maintainers **before implementation**. New features, integrations, and storage-format changes also need discussion first.
+Discuss meaningful changes with the maintainers **before implementing them**. That covers the notebook model, teaching method, agent behavior, publishing, core architecture, storage formats, new features and integrations. Open an issue that explains the problem, the behavior you propose and the alternatives you considered.
 
-A fix restores intended behavior; changing what the intended behavior should be is a design proposal. If that behavior is unclear, discuss it first. A fix that requires major architectural or storage changes still needs agreement on the approach.
+A fix restores intended behavior. Changing what the intended behavior should be is a design proposal. If the intended behavior is unclear, ask first.
 
-Plugins are the intended home for optional capabilities that do not belong in core. The plugin infrastructure is still under development, so discuss the use case rather than assuming a stable extension point exists.
+Plugins are the home for optional capabilities that don't belong in core. The plugin infrastructure is still evolving, so discuss the use case before assuming an extension point is stable.
 
-## Before starting
+## Upstream
 
-Check existing issues, PRs, and the [public work board](https://github.com/users/amosblomqvist/projects/2) for related work. **In progress** means someone is already working on the problem; coordinate before starting a parallel implementation. A board item is not, by itself, agreement to implement a proposal.
-
-- [Issues](https://github.com/amosblomqvist/learnharness/issues): concrete bugs and agreed implementation work.
-- [Discussions](https://github.com/amosblomqvist/learnharness/discussions): feature ideas and substantial design proposals. Explain the problem, proposed behavior, and relevant alternatives.
-- [Discord](https://discord.gg/5tCHHQEB2e): quick questions and conversation. Record actionable proposals and decisions on GitHub so others can find the context.
+Socratech is a fork of [LearnHarness](https://github.com/amosblomqvist/learnharness) and regularly merges upstream changes. A bug that also exists in LearnHarness and doesn't touch Socratech-specific code (notebooks, publishing, branding) is best reported and fixed [upstream](https://github.com/amosblomqvist/learnharness/issues). Socratech picks the fix up on the next merge. Keep Socratech-only changes out of shared files where you can, so merges stay clean.
 
 ## Pull requests
 
-**Keep each PR focused on one coherent problem.** Include the tests and documentation needed for that change, but leave unrelated fixes, refactors, dependency updates, and formatting changes for separate PRs. Follow the existing architecture and conventions.
+**Keep each PR focused on one coherent problem.** Include the tests and documentation that change needs. Leave unrelated fixes, refactors, dependency updates and formatting for separate PRs. Follow the existing architecture and conventions.
 
-Use **clear, precise, concise language**. Explain:
+In the description, explain:
 
-- The problem, with a link to the relevant issue or discussion if one exists.
-- What changed and why it addresses the problem.
-- How you verified it, including important limitations and anything untested.
+- the problem, linking the issue if there is one;
+- what changed and why it fixes the problem;
+- how you verified it, including limitations and anything untested.
 
-Avoid unnecessary jargon, lengthy boilerplate, and unsupported claims. Distinguish observed behavior from hypotheses.
-
-We judge contributions by their results, not the tools used to produce them. AI-assisted and manually written contributions follow the same standards; disclosure of AI assistance is not required. You are responsible for the accuracy of the description, implementation, tests, and documentation.
+Use clear, concise language and distinguish what you observed from what you suspect. AI-assisted and hand-written contributions are held to the same standard; you're responsible for the accuracy of everything in the PR.
 
 ### Verification
 
-Run relevant checks and add regression coverage where useful. Briefly describe what you actually tested and any important limitations—for example, whether you used a real provider or mocked responses.
+Run the relevant checks and add regression coverage where useful:
 
-See the [development guide](docs/development.md) for setup and check commands, and the [architecture reference](docs/architecture.md) for runtime boundaries.
+```bash
+npm run typecheck && npm run lint && npm test
+```
+
+See the [development guide](docs/development.md) for setup and the [architecture reference](docs/architecture.md) for runtime boundaries.
 
 ## Bug reports
 
-Include the app version and relevant environment, what you did, what you expected, and what happened. Add the provider/model when relevant and a minimal example, screenshot, or redacted error if possible. Note whether the problem repeats and any workaround you found. You do not need to know the root cause.
+Include the app version or commit, your OS, what you did, what you expected and what happened. Add the provider/model when relevant, plus a minimal example, screenshot or redacted error if you can.
 
-Do not publish credentials, tokens, private learning records, or private course materials—or use them as test fixtures. Prefer synthetic or shareable examples.
+Never post credentials, tokens, private notebooks or private learning records, and never use them as test fixtures. Prefer synthetic or shareable examples.
 
 ## Review and credit
 
-Maintainers decide project direction and what is accepted. Review may lead to revisions, narrower scope, further discussion, or a decision not to proceed. Passing tests does not, by itself, establish that a proposed behavior belongs in the product.
+Maintainers decide project direction and what is accepted. Review may lead to revisions, narrower scope or a decision not to proceed; passing tests alone don't establish that a behavior belongs in the product. We may finish a contribution with follow-up changes while preserving authorship and credit.
 
-Where suitable, we build on contributors’ implementations and work through revisions with their authors. We may integrate a contribution with finishing changes while preserving authorship and appropriate credit; adopting part of a PR is not acceptance of the whole proposal.
-
-A PR does not guarantee acceptance or inclusion in a particular release. Integration and publication are separate; consult the [work board](https://github.com/users/amosblomqvist/projects/2) and [releases](https://github.com/amosblomqvist/learnharness/releases) for current status.
-
-**Interested in contributing regularly?** If you’d like to help maintain LearnHarness, review and finish fixes, or support other contributors, email me at [contribute@learnharness.ai](mailto:contribute@learnharness.ai). Tell me a little about your interests and how you’d like to help.
-
-LearnHarness is licensed under [AGPL-3.0](LICENSE).
+Socratech is licensed under [AGPL-3.0](LICENSE). By contributing, you agree your contribution is licensed under the same terms.
