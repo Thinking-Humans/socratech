@@ -234,15 +234,37 @@ describe("parseCompactionSettingsBody (owner round 14)", () => {
 });
 
 describe("SETTINGS_SECTIONS (the route's section map)", () => {
-	it("maps exactly the eight record sections", () => {
+	it("maps exactly the record sections", () => {
 		// compaction joined (owner round 14): its own section PUT — the
 		// threshold is engine behavior, not an agent-section key. The custom
 		// endpoint is NOT a section: it is one more provider in the Keys list,
 		// connected through POST /api/custom-provider.
 		assert.deepEqual(
 			Object.keys(SETTINGS_SECTIONS),
-			["general", "chat", "agent", "appearance", "graph", "compaction", "models", "dictation", "claudeCode"],
+			["general", "chat", "agent", "appearance", "graph", "compaction", "models", "dictation", "claudeCode", "publishing", "notes"],
 		);
+	});
+});
+
+describe("parseNotesSettingsBody (notes-first, 2026-11-15)", () => {
+	it("accepts an absolute vault, refuses a relative one", () => {
+		assert.deepEqual(SETTINGS_SECTIONS.notes({ vaultDir: "/home/me/notes/" }), { ok: true, settings: { vaultDir: "/home/me/notes" } });
+		assert.deepEqual(SETTINGS_SECTIONS.notes({}), { ok: true, settings: {} });
+		assert.ok(!SETTINGS_SECTIONS.notes({ vaultDir: "notes" }).ok);
+	});
+});
+
+describe("parsePublishingSettingsBody (learn-in-public, 2026-11-15)", () => {
+	it("accepts valid fields, normalizes trailing slashes", () => {
+		const r = SETTINGS_SECTIONS.publishing({ siteRepo: "/home/me/blog/", contentDir: "content/posts/", format: "notebook", baseUrl: "https://me.github.io/blog/", push: false });
+		assert.deepEqual(r, { ok: true, settings: { siteRepo: "/home/me/blog", contentDir: "content/posts", format: "notebook", baseUrl: "https://me.github.io/blog", push: false } });
+		assert.deepEqual(SETTINGS_SECTIONS.publishing({}), { ok: true, settings: {} });
+	});
+	it("refuses relative repos, escaping content dirs, unknown formats, non-http URLs", () => {
+		for (const bad of [{ siteRepo: "blog" }, { contentDir: "../outside" }, { contentDir: "/abs" }, { format: "pdf" }, { baseUrl: "ftp://x" }, { push: "yes" }]) {
+			const r = SETTINGS_SECTIONS.publishing(bad);
+			assert.equal(r.ok, false, JSON.stringify(bad));
+		}
 	});
 });
 

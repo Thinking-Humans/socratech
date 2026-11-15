@@ -26,6 +26,7 @@ import { SubagentSteerCard } from "@/components/artifacts/steer-card";
 import { Composer } from "@/components/composer";
 import { useEnterSubmits } from "@/components/enter-submits";
 import { blurAfterPointerClick } from "@/components/focus-hygiene";
+import { cn } from "@/lib/utils";
 import { dockStateKey } from "@/components/dock-state-key";
 import { clearOpeningPrompt, readOpeningPromptEntry, stashOpeningPrompt, OPENING_PROMPT_FAILURE } from "@/components/opening-prompt";
 import { forwardDockWheel, useDockHeight } from "@/components/dock-height";
@@ -52,6 +53,7 @@ import { PlanMarginalia, planExists } from "@/components/plan-window";
 import { MermaidOverlay, SessionMermaidContext } from "@/components/session-overlay";
 import { AbortTurnDialog, type AbortMode } from "@/components/abort-turn-dialog";
 import { ArrowRightIcon, DumbbellIcon, ShuffleIcon, WaypointsIcon } from "lucide-react";
+import { JournalView } from "@/components/journal/journal-view";
 import type { PlanBlockData } from "@/src/core";
 import { QuestionDock } from "@/components/question-dock";
 import { SessionFind } from "@/components/session-find";
@@ -220,7 +222,12 @@ export function Chat({
 	initiallyCompacting = false,
 	initialConfigured = false,
 	kind = "teach",
+	initialView = "chat",
+	embedded = false,
 }: {
+	/** Rendered inside another surface's pane (notes-first journey pane,
+	 *  2026-11-15): fills its container instead of the viewport. */
+	embedded?: boolean;
 	chatId: string;
 	title: string;
 	initialMessages: LhMessage[];
@@ -244,7 +251,14 @@ export function Chat({
 	 *  it (BYOK, owner 2026-09-22). The server gate stays the truth; this
 	 *  only decides whether the pill rides the composer. */
 	initialConfigured?: boolean;
+	/** Which tab opens (learn-in-public, 2026-11-15): ?view=journal deep-links
+	 *  the session's Journal tab (the sidebar's Journals rows use it). */
+	initialView?: "chat" | "journal";
 }) {
+	// THE JOURNAL TAB (owner, 2026-11-15 — tab swap): the journal covers the
+	// session area as an absolute overlay, so the transcript, its stream and
+	// its dock stay mounted (and running) underneath.
+	const [view, setView] = useState<"chat" | "journal">(initialView);
 	// Reattach plumbing (background-turn runner wave): the hook holds the
 	// settled terminal's callback — a stable ref assigned below, once
 	// syncFromServer exists (refs, not closures: no stale capture).
@@ -1271,7 +1285,7 @@ export function Chat({
 		    chip) spans from the left sidebar's edge to the panel's edge. The
 		    dock overlays the column bottom (outside the scroller); a spacer in
 		    the transcript reserves its height. */}
-		<div className="flex h-dvh">
+		<div className={embedded ? "flex h-full min-h-0" : "flex h-dvh"}>
 			<div className="flex min-w-0 flex-1 flex-col">
 				{/* The top bar is its own block (owner, top-fade round 4): in flow
 				    above the scroller on the plain page background — no gradient. Its
@@ -1347,6 +1361,33 @@ export function Chat({
 							<div className="min-w-4 flex-1" aria-hidden="true" />
 					</>
 					)}
+					{/* Chat | Journal (learn-in-public, owner 2026-11-15): the tab swap. */}
+					<div
+						role="tablist"
+						aria-label="Session view"
+						data-testid="session-view-tabs"
+						className="lh-no-drag flex shrink-0 items-center gap-0.5 rounded-full border border-border/80 p-0.5"
+					>
+						{(["chat", "journal"] as const).map((v) => (
+							<button
+								key={v}
+								type="button"
+								role="tab"
+								aria-selected={view === v}
+								data-testid={`session-view-${v}`}
+								onClick={(e) => {
+									blurAfterPointerClick(e);
+									setView(v);
+								}}
+								className={cn(
+									"rounded-full px-2 py-0.5 text-xs font-medium uppercase tracking-wide transition-colors",
+									view === v ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground",
+								)}
+							>
+								{v === "chat" ? "Chat" : "Journal"}
+							</button>
+						))}
+					</div>
 					{/* The plan chip (owner, plan-placement round): session-level
 					    structure beside the phase chip — access to the full-DAG popup
 					    at every width; the marginalia is the wide-screen glance view. */}
@@ -1764,6 +1805,9 @@ export function Chat({
 				    INSIDE the session area — absolute inset-0 siblings of the scroller,
 				    so they own the area below the drag bar, right of the sidebar, and
 				    the top bar stays sharp + draggable while a focus is open. */}
+				{view === "journal" && (
+					<JournalView chatId={chatId} chatTitle={titleText} className="absolute inset-0 z-30 bg-background" />
+				)}
 				{mermaidFocus !== null && (
 					<MermaidOverlay chart={mermaidFocus} onClose={() => setMermaidFocus(null)} />
 				)}

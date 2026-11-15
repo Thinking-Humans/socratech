@@ -28,6 +28,7 @@ import type {
 	NotesSource,
 } from "./contracts.ts";
 import type { UserSettings } from "./settings.ts";
+import type { Journal, JournalSummary } from "./contracts/journal.ts";
 
 // ─── ChatStore — the session record's home (data/chats) ─────────────────────
 
@@ -167,6 +168,34 @@ export interface JobStore {
 	 *  route refuses while jobs are still running, so by the time this
 	 *  fires every record is terminal. */
 	deleteJobsForChat(chatId: string): number;
+}
+
+// ─── JournalStore — learn-in-public journals (data/journals) ─────────────────
+
+/**
+ * One JSON file per journal. Replace-whole: edits are pure transforms in
+ * core/journal.ts, the store only persists. Every write announces
+ * "journals-changed" after it lands.
+ */
+export interface JournalStore {
+	/** Persist a NEW journal (refuses an id that already exists). */
+	createJournal(journal: Journal): Journal;
+	/** The record, or null if unknown id / corrupt file. */
+	getJournal(id: string): Journal | null;
+	/** The journal belonging to a session, if any (at most one per chat). */
+	findJournalByChat(chatId: string): Journal | null;
+	/** All journals, newest activity first. */
+	listJournals(): JournalSummary[];
+	/** Replace the stored record (refuses an unknown id). */
+	saveJournal(journal: Journal): Journal;
+	/** False when the id is unknown. Deleting a SESSION's journal also
+	 *  records the session as opted out (owner, 2026-11-15): auto-fill
+	 *  stops recreating it. */
+	deleteJournal(id: string): boolean;
+	/** True when the learner deleted this session's journal. */
+	isChatOptedOut(chatId: string): boolean;
+	/** Starting a journal by hand lifts the opt-out. */
+	clearChatOptOut(chatId: string): void;
 }
 
 // ─── SettingsStore — THE user settings record (settings-storage wave, 2026-09-19) ──

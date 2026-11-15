@@ -21,6 +21,11 @@ export * from "./chains.ts";
 // improvisation.ts (cognitive-gym reorg, 2026-10-30): idea standings
 // derived from improvisation judgments — pure, browser-safe.
 export * from "./improvisation.ts";
+// journal.ts + journal-export.ts (learn-in-public, 2026-11-15): pure
+// journal ops and the bundle exporter — the pane previews exports client-side.
+export * from "./journal.ts";
+export * from "./journal-export.ts";
+export * from "./notes.ts";
 export * from "./render-settings.ts";
 
 export * from "./question-core.ts";

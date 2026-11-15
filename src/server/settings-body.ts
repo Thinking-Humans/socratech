@@ -25,7 +25,7 @@ import type {
 	ModelsSettings,
 	RoleModelOverride,
 } from "../core/settings.ts";
-import { BACKGROUND_MODEL_ROLES, COMPACTION_THRESHOLD_FLOOR, CUSTOM_MODEL_PIN_FLOOR, EXTRACTION_CHUNK_TOKENS_FLOOR, MODEL_SLOTS } from "../core/settings.ts";
+import { BACKGROUND_MODEL_ROLES, COMPACTION_THRESHOLD_FLOOR, CUSTOM_MODEL_PIN_FLOOR, EXTRACTION_CHUNK_TOKENS_FLOOR, MODEL_SLOTS, sanitizeNotes, sanitizePublishing, type NotesSettings, type PublishingSettings } from "../core/settings.ts";
 import { WRITABLE_TOOL_KEYS } from "../core/pending.ts";
 import { isDictationLanguage } from "../core/dictation.ts";
 
@@ -99,6 +99,39 @@ export function parseClaudeCodeSettingsBody(body: unknown): SettingsBodyResult<{
 	if (raw.enabled === undefined) return { ok: true, settings: {} };
 	if (typeof raw.enabled !== "boolean") return { ok: false, error: "enabled must be a boolean" };
 	return { ok: true, settings: { enabled: raw.enabled } };
+}
+
+/** publishing (learn-in-public): every field optional; a present field
+ *  must be shape-valid (absolute repo path, relative content dir without
+ *  "..", known format, http(s) base URL, boolean push) — else 400. */
+export function parsePublishingSettingsBody(body: unknown): SettingsBodyResult<PublishingSettings> {
+	const raw = asRecord(body);
+	if (!raw) return { ok: false, error: "Invalid JSON body" };
+	const clean = sanitizePublishing(raw);
+	for (const key of ["siteRepo", "contentDir", "format", "baseUrl", "push"] as const) {
+		if (raw[key] !== undefined && raw[key] !== "" && clean[key] === undefined) {
+			const why: Record<typeof key, string> = {
+				siteRepo: "siteRepo must be an absolute path",
+				contentDir: 'contentDir must be a relative path without ".."',
+				format: 'format must be "markdown" or "notebook"',
+				baseUrl: "baseUrl must be an http(s) URL",
+				push: "push must be a boolean",
+			};
+			return { ok: false, error: why[key] };
+		}
+	}
+	return { ok: true, settings: clean };
+}
+
+/** notes (notes-first N1): vaultDir optional; present = absolute path. */
+export function parseNotesSettingsBody(body: unknown): SettingsBodyResult<NotesSettings> {
+	const raw = asRecord(body);
+	if (!raw) return { ok: false, error: "Invalid JSON body" };
+	const clean = sanitizeNotes(raw);
+	if (raw.vaultDir !== undefined && raw.vaultDir !== "" && clean.vaultDir === undefined) {
+		return { ok: false, error: "vaultDir must be an absolute path" };
+	}
+	return { ok: true, settings: clean };
 }
 
 /** agent.models: only the six known background roles; each override's
@@ -447,6 +480,8 @@ export const SETTINGS_SECTIONS = {
 	models: parseModelsSettingsBody,
 	dictation: parseDictationSettingsBody,
 	claudeCode: parseClaudeCodeSettingsBody,
+	publishing: parsePublishingSettingsBody,
+	notes: parseNotesSettingsBody,
 } as const;
 
 export type SettingsSectionName = keyof typeof SETTINGS_SECTIONS;

@@ -29,6 +29,8 @@ export const PATHS = {
 	/** Debug artifacts (env-gated): data/debug/provider-events/<chatId>.jsonl
 	 * raw provider stream recordings (src/agent/provider-events.ts). */
 	debug: path.join(DATA_ROOT, "debug"),
+	/** Learn-in-public journals, one JSON file per journal (src/store/journals.ts). */
+	journals: path.join(DATA_ROOT, "journals"),
 } as const;
 
 // ─── Models ────────────────────────────────────────────────────────────────

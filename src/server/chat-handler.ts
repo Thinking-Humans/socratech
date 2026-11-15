@@ -46,6 +46,7 @@ import { beginTurn, endTurn } from "./turn-liveness.ts";
 import { applyParkedDismissal } from "./dismissal-park.ts";
 import { registerTurn, rememberTurnFailure, unregisterTurn } from "./turn-runs.ts";
 import { persistTurn, triggerExtraction, TurnPersistenceError } from "./turn-service.ts";
+import { fillJournalFromChat } from "./journals.ts";
 import { hasProbeDone, danglingQuestionOf } from "../core/native-messages.ts";
 import { composeInstructions } from "../agent/teacher-agent.ts";
 import type { PracticeToolContext } from "../agent/tools/practice.ts";
@@ -608,6 +609,18 @@ export async function handleChatInput(
 					// (extraction-UX redesign, 2026-09-24): the trigger compares
 					// against it and the pipeline's batches share it.
 					triggerExtraction(stores, extraction, chatId, effective.graph.extractionChunkTokens);
+				}
+				// JOURNAL AUTO-FILL (learn-in-public, 2026-11-15): practice and
+				// improvise turns deposit exercise / attempt / verdict cells in
+				// the session's journal. Idempotent; never fails the turn.
+				// Skipped under tests (triggerExtraction's rule): scripted chats
+				// are fixtures; the seam is tested directly (tests/journal.test.ts).
+				if (isProblemSessionKind(record.kind) && process.env.NODE_ENV !== "test") {
+					try {
+						fillJournalFromChat(stores, chatId);
+					} catch (err) {
+						console.error(`[chat ${chatId}] journal fill failed:`, err);
+					}
 				}
 				// PARKED DISMISSAL (owner, 2026-10-04): a dismissal that arrived
 				// mid-turn was parked by the dismiss route (202); now that

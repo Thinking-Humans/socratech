@@ -79,7 +79,7 @@ Dependency arrows point **down only**. Each layer may import the core barrel; no
 ```mermaid
 flowchart TB
     subgraph SHELL["SHELL — render + transport, no domain logic"]
-        APP["app/ — pages + 28 API route handlers"]
+        APP["app/ — pages + 41 API route handlers"]
         COMP["components/ — session + home UI, graph canvas"]
     end
 
@@ -98,7 +98,7 @@ flowchart TB
 
     subgraph CORE["CORE — src/core — pure domain, zero IO"]
         CONTRACTS["contracts/ — 6 domains: plan · graph · chat · jobs · probe · models"]
-        PORTS["ports.ts — ChatStore · GraphStore · JobStore (types only)"]
+        PORTS["ports.ts — ChatStore · GraphStore · JobStore · JournalStore (types only)"]
         BRAIN["merger + derivation · coverage · question-core · plan-tree · phases · layout · prices · tool-parts"]
         CBAR["barrel index.ts — browser-safe exports ONLY"]
     end
@@ -181,7 +181,7 @@ flowchart LR
         direction TB
         SESS["session brain: phases · plan-tree · question-core · pending · steer builders"]
         GBRAIN["graph brain: merger + derivation · coverage · clusters · layout"]
-        PORTSBOX["PORTS (types only): ChatStore · GraphStore · JobStore · PracticeStore"]
+        PORTSBOX["PORTS (types only): ChatStore · GraphStore · JobStore · PracticeStore · JournalStore"]
     end
 
     subgraph DRIVEN["DRIVEN ADAPTERS — outbound"]
@@ -425,6 +425,8 @@ flowchart LR
     REND -->|"fetch /api/*"| NEXT
 ```
 
+**Learn-in-public publishing (2026-11-15, docs/learn-in-public.md).** The Next server runs the user's own `git` as a subprocess (`src/server/publish.ts`) against the configured site-repo clone — with the user's credentials (ssh agent / credential helper), `GIT_TERMINAL_PROMPT=0` so a missing credential fails fast. It stages and commits ONLY the bundle directory and pushes only after the learner confirms the dry run. The two routes that can cause a push (publish POST, publishing settings PUT) refuse non-JSON bodies and foreign `Origin`s, because browser-only mode answers any caller.
+
 The Electron main is a launcher + credential/security guard, never a host for teaching or inference logic: single-instance lock, deny-by-default permissions, origin-pinned navigation, sandboxed renderer. All Next.js code runs unchanged in a child process (`output: "standalone"`), relocated by the `LH_DATA_DIR` seam (also the test seam — `data-dir-seam.test.ts` covers it, including a fresh-child-process case). The build hard-fails if repo `data/` would leak into the bundle or if prompt assets fall out of the trace (`scripts/build-server.mjs`).
 
 ---
@@ -495,6 +497,7 @@ Before 2026-10-02 the client discovered server-side change by polling: a lattice
 | `turn-started` | `{chatId}` | `beginTurn` success (after the registry write; the double-begin 409 path is silent) — every turn, client-initiated included |
 | `turn-settled` | `{chatId}` | `endTurn` on a live entry — fires after `persistTurn`, so fetches read durable truth |
 | `jobs-changed` | `{chatId}` | every job-store write (create/update/delete-that-removed) |
+| `journals-changed` | `{journalId, chatId?}` | every journal-store write (create/save/delete-that-removed) — the pane and the sidebar's Journals list refetch |
 | `activity-changed` | `{}` | extraction `setPhase`/`finishExtraction`; practice `registerRow`/phase-writes/`finishPractice` |
 | `chats-changed` | `{}` | list-shape writes only: chat create/rename/delete-that-removed |
 
@@ -554,6 +557,10 @@ Every place the architecture is designed to be cut — the "one file" a future c
 | Agent construction (tests) | `handleChatRequest(req, buildAgent?)` | scripted engines, no refactor |
 | Sub-agent verification | `sub-agents/headless.ts` (`headlessOverride`) | demo/SVG verification, no Chrome |
 | Data location (Electron) | `LH_DATA_DIR` env (`config.ts` PATHS) | where data/ lives, nothing else |
+| Journal operations | `src/server/journals.ts` | one-op-per-request writes (routes + MCP) under the lost-update law |
+| Session → journal fill | `src/core/journal-fill.ts` + `fillJournalFromChat` | which session events become exercise/attempt/verdict cells |
+| Journal → bundle | `src/core/journal-export.ts` | the published file format (markdown / notebook) |
+| Publish transport | `src/server/publish.ts` | where and how a bundle lands (git clone today) |
 | Desktop host | `electron/main.cjs` | launcher/security shell only |
 
 ---

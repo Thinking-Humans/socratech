@@ -6,6 +6,10 @@ const pkg = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), 
 const nextConfig: NextConfig = {
 	// Public build metadata only; no new runtime Electron version API.
 	env: { LH_VERSION: pkg.version, LH_HOMEPAGE: pkg.homepage },
+	// Next 16.4.3 dev: each forwarded browser log triggers a Turbopack
+	// rebuild → "HMR hash mismatch" full reload → new log → infinite reload
+	// loop (2026-11-15). Off until Next is bumped past it.
+	logging: { browserToTerminal: false },
 	// Desktop target (Electron wrapper, 2026-09-17): standalone output = a
 	// self-contained .next/standalone/server.js the Electron shell spawns
 	// on 127.0.0.1. Harmless for plain web deploys (extra build output).

@@ -472,7 +472,54 @@ export interface UserSettings {
 	appearance?: AppearanceSettings;
 	graph?: GraphSettings;
 	compaction?: CompactionSettings;
+	/** Learn-in-public publishing target (docs/learn-in-public.md D10). */
+	publishing?: PublishingSettings;
+	/** Notes-first vault (docs/notes-first.md N1). */
+	notes?: NotesSettings;
 	[key: string]: unknown;
+}
+
+/** Where the learner's markdown notes live (owner, 2026-11-15, N1). */
+export interface NotesSettings {
+	/** Absolute path of the vault folder. Unset = `<data>/notes`. */
+	vaultDir?: string;
+}
+
+/** Shape-valid notes fields only. */
+export function sanitizeNotes(raw: Record<string, unknown>): NotesSettings {
+	const out: NotesSettings = {};
+	if (typeof raw.vaultDir === "string" && raw.vaultDir.startsWith("/")) out.vaultDir = raw.vaultDir.replace(/\/+$/, "") || "/";
+	return out;
+}
+
+/** Where journals publish (learn-in-public, owner 2026-11-15, D10): a local
+ *  clone of the site repo; the bundle lands in `<siteRepo>/<contentDir>/`,
+ *  is committed, and pushed after the learner confirms. Every field is
+ *  optional on disk; src/server/publish.ts resolves the defaults. */
+export interface PublishingSettings {
+	/** Absolute path of the site repo clone. Unset = publishing off. */
+	siteRepo?: string;
+	/** Relative to siteRepo. Default "content/posts". */
+	contentDir?: string;
+	/** Default "markdown". */
+	format?: "markdown" | "notebook";
+	/** Public site root (e.g. https://me.github.io/blog) — for post links. */
+	baseUrl?: string;
+	/** Push after committing. Default true. */
+	push?: boolean;
+}
+
+const REL_DIR_RE = /^(?!\/)(?!.*(?:^|\/)\.\.(?:\/|$))[A-Za-z0-9._\/-]+$/;
+
+/** Shape-valid publishing fields only; anything malformed is dropped. */
+export function sanitizePublishing(raw: Record<string, unknown>): PublishingSettings {
+	const out: PublishingSettings = {};
+	if (typeof raw.siteRepo === "string" && raw.siteRepo.startsWith("/")) out.siteRepo = raw.siteRepo.replace(/\/+$/, "") || "/";
+	if (typeof raw.contentDir === "string" && REL_DIR_RE.test(raw.contentDir)) out.contentDir = raw.contentDir.replace(/\/+$/, "");
+	if (raw.format === "markdown" || raw.format === "notebook") out.format = raw.format;
+	if (typeof raw.baseUrl === "string" && /^https?:\/\/\S+$/.test(raw.baseUrl)) out.baseUrl = raw.baseUrl.replace(/\/+$/, "");
+	if (typeof raw.push === "boolean") out.push = raw.push;
+	return out;
 }
 
 /** Factory defaults for everything core can pin (owner decisions
@@ -808,6 +855,12 @@ export function sanitizeUserSettings(raw: unknown): UserSettings | null {
 		out.claudeCode = raw !== null && typeof raw === "object" && !Array.isArray(raw)
 			&& typeof (raw as Record<string, unknown>).enabled === "boolean"
 			? { enabled: (raw as { enabled: boolean }).enabled } : {};
+	}
+	if (r.publishing !== null && typeof r.publishing === "object" && !Array.isArray(r.publishing)) {
+		out.publishing = sanitizePublishing(r.publishing as Record<string, unknown>);
+	}
+	if (r.notes !== null && typeof r.notes === "object" && !Array.isArray(r.notes)) {
+		out.notes = sanitizeNotes(r.notes as Record<string, unknown>);
 	}
 	if (r.agent !== null && typeof r.agent === "object" && !Array.isArray(r.agent)) {
 		out.agent = sanitizeAgent(r.agent as Record<string, unknown>);

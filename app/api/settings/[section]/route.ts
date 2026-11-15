@@ -39,6 +39,7 @@ import {
 	effectiveSettings,
 	promptOverrides,
 	readSettingsRecord,
+	refuseCrossSite,
 	validateChatSettings,
 	validateModelsSettings,
 	writeSettingsRecord,
@@ -58,6 +59,13 @@ export async function PUT(request: Request, ctx: { params: Promise<{ section: st
 			{ error: `unknown settings section "${section}"`, supported: Object.keys(SETTINGS_SECTIONS) },
 			{ status: 404 },
 		);
+	}
+	// The publishing target decides where a confirmed publish pushes with
+	// the learner's git credentials — same cross-site guard as the publish
+	// POST (learn-in-public, 2026-11-15).
+	if (section === "publishing") {
+		const refused = refuseCrossSite(request);
+		if (refused) return refused;
 	}
 	const body = await request.json().catch(() => null);
 	const parsed = parser(body);

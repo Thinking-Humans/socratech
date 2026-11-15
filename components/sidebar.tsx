@@ -1,5 +1,7 @@
 "use client";
 
+import { JournalsSection } from "@/components/journal/journals-section";
+import { NotesSection } from "@/components/notes/notes-section";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -699,6 +701,9 @@ function SessionsSidebar() {
 					</Hint>
 				</div>
 
+				{/* Notes first (2026-11-15): Today / Graph / the vault, above the session doors. */}
+				<NotesSection />
+
 				{/* Two doors, STACKED (owner round 8, 2026-10-05 — was a
 				    half/half row): full-width rows read cleaner and give the
 				    labels room; teaching keeps the original draft route,
@@ -861,6 +866,10 @@ function SessionsSidebar() {
 					    populates and grows when processes run. The session list is
 					    flex-1, so this pins to the bottom. Sidebar closed = the
 					    learner opted out (no ambient signal, user decision). */}
+					{/* Journals (learn-in-public, owner 2026-11-15): below the session
+					    list, above the background agents. */}
+					<JournalsSection />
+
 					<ActivitySection />
 
 					{/* Settings entry (settings-app wave): same row language as

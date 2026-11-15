@@ -251,6 +251,7 @@ The teacher's context window and attention are precious — it has the lesson to
 6b. **Researcher tool** — fact verification for the teacher (§2.5); cheap port of proven pi pieces. **✅ Wave 1 (W2): async job protocol, live activity card, sourced brief, teacher continuation. Live-verified.**
 7. **Presentation fixes** — LaTeX delimiters, line breaks, mermaid integration. **✅ Wave 1 (W3): \(…\)/\[…\] contract ($ literal forever), remark-breaks, dark mermaid + styled streamdown chrome. Live-verified.**
 8. **Structural-identity candidates** (from §2 ideation, pending selection): sectioned lesson-document transcript, gated progression, typed blocks, session-state strip.
+8b. **Learn in public** (docs/learn-in-public.md, owner 2026-11-15) — journals per session (auto-filled exercises/attempts/verdicts + learner reflections/asides/code, per-cell publish), publish to a git-hosted static site, published reflections feed the graph. **✅ Phases 1–4: journal domain, auto-fill, Journal tab + sidebar, git publish with dry-run confirm. ☐ 5 starter-site scaffold · ☐ 6 MCP journal tools · ☐ 7 rhizoMorphic target.**
 9. **Later:** dictation (Deepgram token-mint + AudioWorklet capture), frontier expansion + what-next queries (new territory / repairs / conversions), spaced repetition on the event ledger, practice exercises, Electron.
 
 ---

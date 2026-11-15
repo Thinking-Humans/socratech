@@ -50,6 +50,9 @@ export interface ServerEvents {
 	 *  the chat; the client mirrors it by disabling the composer/dock
 	 *  submit. */
 	"compaction-changed": { chatId: string; running: boolean };
+	/** A journal was created, edited, published or deleted (learn-in-public,
+	 *  2026-11-15). chatId when the journal belongs to a session. */
+	"journals-changed": { journalId: string; chatId?: string };
 }
 
 export type ServerEventType = keyof ServerEvents;
@@ -66,6 +69,7 @@ export const SERVER_EVENT_TYPES = [
 	"subscriptions-changed",
 	"record-changed",
 	"compaction-changed",
+	"journals-changed",
 ] as const satisfies readonly ServerEventType[];
 
 /** One notification: the type discriminates the payload. */

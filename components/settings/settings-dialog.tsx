@@ -51,6 +51,7 @@ import { Hint } from "@/components/ui/hint";
 import { AppearanceSection, GraphSection } from "./appearance-section.tsx";
 import { KeyboardSection } from "./keyboard-section.tsx";
 import { ClaudeSection } from "./claude-section.tsx";
+import { PublishingSection } from "./publishing-section.tsx";
 import { ChatGPTUIProvider } from "./chatgpt-connection.tsx";
 import { NativeSubscriptionUIProvider } from "./subscription-connections.tsx";
 
@@ -64,6 +65,7 @@ const SECTIONS = [
 	{ id: "graph", label: "Graph" },
 	{ id: "keyboard", label: "Keyboard", hint: "Stored on this device" },
 	{ id: "claude", label: "Claude" },
+	{ id: "publishing", label: "Publishing" },
 	{ id: "general", label: "General" },
 ] as const;
 type SectionId = (typeof SECTIONS)[number]["id"];
@@ -439,6 +441,15 @@ export function SettingsDialogBody({
 									testid="section-claude"
 								>
 									<ClaudeSection />
+								</SettingsSection>
+							)}
+							{active === "publishing" && (
+								<SettingsSection
+									title="Publishing"
+									hint="Journals publish into a git repo you own, after you confirm each one."
+									testid="section-publishing"
+								>
+									<PublishingSection />
 								</SettingsSection>
 							)}
 						</div>
