@@ -38,11 +38,13 @@ describe("graph clusters", () => {
 	});
 });
 
-describe("LH mark", () => {
-	it("the ring follows the strong line ink; the spiral gray stays", () => {
-		const html = renderToStaticMarkup(<LhMark />);
+describe("Socratech mark", () => {
+	it("one fill in the strong line ink; the details are mask cut-outs, unique per instance", () => {
+		const html = renderToStaticMarkup(<><LhMark /><LhMark /></>);
 		assert.equal((html.match(/fill:var\(--lh-line-strong\)/g) ?? []).length, 2);
-		assert.ok(!html.includes("#fff"));
-		assert.ok(html.includes("rgb(148,148,148)"));
+		const ids = [...html.matchAll(/<mask id="([^"]+)"/g)].map((m) => m[1]!);
+		assert.equal(ids.length, 2);
+		assert.notEqual(ids[0], ids[1]);
+		for (const id of ids) assert.ok(html.includes(`url(#${id})`), id);
 	});
 });
