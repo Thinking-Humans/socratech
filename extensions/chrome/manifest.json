@@ -1,14 +1,43 @@
 {
 	"manifest_version": 3,
 	"name": "Socratech Clip",
-	"version": "0.1.0",
+	"version": "0.2.0",
 	"description": "Add the page you are reading to your Socratech vault as an interactive notebook.",
-	"permissions": ["activeTab", "scripting", "storage"],
-	"host_permissions": ["http://localhost/*", "http://127.0.0.1/*"],
-	"background": { "service_worker": "background.js", "type": "module" },
-	"action": { "default_title": "Add to Socratech", "default_popup": "popup.html" },
+	"permissions": [
+		"activeTab",
+		"scripting",
+		"storage"
+	],
+	"host_permissions": [
+		"http://localhost/*",
+		"http://127.0.0.1/*"
+	],
+	"background": {
+		"service_worker": "background.js",
+		"type": "module"
+	},
+	"action": {
+		"default_title": "Add to Socratech",
+		"default_popup": "popup.html"
+	},
 	"options_page": "options.html",
 	"commands": {
-		"_execute_action": { "suggested_key": { "default": "Alt+Shift+S" } }
-	}
+		"_execute_action": {
+			"suggested_key": {
+				"default": "Alt+Shift+S"
+			}
+		}
+	},
+	"content_scripts": [
+		{
+			"matches": [
+				"http://localhost/*",
+				"http://127.0.0.1/*"
+			],
+			"js": [
+				"connect.js"
+			],
+			"run_at": "document_idle"
+		}
+	]
 }

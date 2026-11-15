@@ -93,3 +93,19 @@ into the extension's options."
 3. Socratech → Settings → Claude → **Copy extension setup** → paste into the
    extension's options → Save.
 4. On any page: toolbar button or **Alt+Shift+S** → **Add as notebook**.
+
+## Connect Claude — BUILT 2026-11-16 (owner: one click, not silent)
+Settings → Claude → **Connect Claude** sets up every local client found:
+- **Claude Code**: `claude mcp remove` + `claude mcp add --transport http
+  --scope user learnharness <origin>/api/mcp --header "Authorization: Bearer …"`.
+- **Claude Desktop**: its config takes stdio servers, so the app writes
+  `<data>/mcp-bridge.cjs` (stdio → HTTP, no npx/download) and merges an
+  `mcpServers.learnharness` entry run by the server's own Node/Electron
+  binary. Other entries are kept; an invalid config is left untouched.
+  Restart Desktop to load it.
+- **Chrome extension**: the page posts the token to its own window; the
+  extension's `connect.js` (localhost/127.0.0.1 only) relays it, and the
+  service worker saves it only after `tools/list` on that page's own
+  origin succeeds.
+A new token needs Connect Claude again. claude.ai / Claude in Chrome are
+not covered (they cannot reach loopback).

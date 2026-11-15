@@ -153,6 +153,20 @@ export function moveCell(journal: Journal, cellId: string, toIndex: number, now:
 	return { ...journal, cells, updatedAt: now };
 }
 
+/**
+ * Put a whole cell back at `index` (clamped) — the notebook's undo of a
+ * delete / redo of an add. Keeps its id, outputs and rating; drops `graph`
+ * (deleting withdrew its ideas, so the cell is "not in the graph" again).
+ */
+export function restoreCell(journal: Journal, cell: JournalCell, index: number, now: string): Journal {
+	if (!isJournalCellRole(cell.role)) throw new JournalError(`Unknown cell role "${String(cell.role)}".`, "invalid");
+	if (journal.cells.some((c) => c.id === cell.id)) throw new JournalError(`Cell id [${cell.id}] already exists.`, "conflict");
+	const { graph: _withdrawn, ...kept } = cell;
+	const cells = [...journal.cells];
+	cells.splice(Math.max(0, Math.min(cells.length, Math.trunc(index))), 0, { ...kept, updatedAt: now });
+	return { ...journal, cells, updatedAt: now };
+}
+
 export interface JournalMetaPatch {
 	title?: string;
 	slug?: string;

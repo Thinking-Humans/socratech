@@ -16,7 +16,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CodeIcon, MessageSquareQuoteIcon, NotebookPenIcon, PenLineIcon, PlayIcon, PlusIcon, RotateCcwIcon, SendIcon, SparklesIcon } from "lucide-react";
-import { bindingForAction, eventMatchesAction, formatBinding, isTypingSurface, runnableLang, type CellPatch, type Journal, type JournalCellRole, type KeyAction, type UnderstandingLevel } from "@/src/core";
+import { bindingForAction, eventMatchesAction, formatBinding, isTypingSurface, runnableLang, type CellPatch, type Journal, type JournalCell, type JournalCellRole, type KeyAction, type UnderstandingLevel } from "@/src/core";
 import { useServerEvent } from "@/components/server-events";
 import { JournalApiError, journalApi } from "@/components/journal/journal-api";
 import { JournalCellView } from "@/components/journal/journal-cell";
@@ -25,6 +25,32 @@ import { JOURNAL_FOCUS_CELL_EVENT } from "@/components/journal/search-everything
 import { cn } from "@/lib/utils";
 
 const today = () => new Date().toISOString().slice(0, 10);
+
+/**
+ * One undoable notebook change. Each side reads the journal as it is when
+ * the step runs (so a re-delete snapshots the cell's latest outputs) and
+ * names the cell to focus afterwards.
+ */
+interface HistoryStep {
+	undo: (j: Journal) => Promise<{ journal: Journal; focus?: string }>;
+	redo: (j: Journal) => Promise<{ journal: Journal; focus?: string }>;
+}
+const HISTORY_LIMIT = 200;
+
+/** The values a patch is about to overwrite — its inverse ("" / 0 clear). */
+function inversePatch(cell: JournalCell, patch: CellPatch): CellPatch {
+	const back: CellPatch = {};
+	if (patch.role !== undefined) back.role = cell.role;
+	if (patch.source !== undefined) back.source = cell.source;
+	if (patch.lang !== undefined) back.lang = cell.lang ?? "";
+	if (patch.output !== undefined) back.output = cell.output ?? "";
+	if (patch.publish !== undefined) back.publish = cell.publish;
+	if (patch.executionCount !== undefined) back.executionCount = cell.executionCount ?? 0;
+	return back;
+}
+
+/** The cell to land on once `index` is gone: the one that took its place, else the one above. */
+const neighbourAt = (j: Journal, index: number) => (j.cells[index] ?? j.cells[index - 1])?.id;
 
 export function JournalView({
 	chatId,
@@ -232,14 +258,93 @@ export function JournalView({
 		}
 	}, [journalIdNow]);
 
+	// ── Undo / redo (cell edits, adds, deletes, moves) ─────────────────────────
+	// Client-side and per notebook: each step is its own inverse operation on
+	// the server, so other writers' changes (agent answers, runs) survive.
+	const journalRef = useRef(journal);
+	journalRef.current = journal;
+	const historyRef = useRef<{ id: string | null; undo: HistoryStep[]; redo: HistoryStep[]; busy: boolean }>({ id: null, undo: [], redo: [], busy: false });
+
+	const flash = useCallback((msg: string, ms = 4000) => {
+		setNotice(msg);
+		setTimeout(() => setNotice((n) => (n === msg ? null : n)), ms);
+	}, []);
+
+	const record = useCallback((journalId: string, step: HistoryStep) => {
+		const h = historyRef.current;
+		if (h.id !== journalId) Object.assign(h, { id: journalId, undo: [], redo: [] });
+		h.undo.push(step);
+		if (h.undo.length > HISTORY_LIMIT) h.undo.shift();
+		h.redo = [];
+	}, []);
+
+	/** Delete-shaped step: `undo` puts `cell` back at `index`. */
+	const removalStep = useCallback((first: JournalCell, index: number): HistoryStep => {
+		let snapshot = first;
+		const remove = async (j: Journal) => {
+			snapshot = j.cells.find((c) => c.id === snapshot.id) ?? snapshot;
+			const journal = await journalApi.deleteCell(j.id, snapshot.id);
+			return { journal, focus: neighbourAt(journal, index) };
+		};
+		const restore = async (j: Journal) => ({ journal: await journalApi.restoreCell(j.id, snapshot, index), focus: snapshot.id });
+		return { undo: restore, redo: remove };
+	}, []);
+
 	const addCell = useCallback(
 		async (role: JournalCellRole, afterId?: string) => {
 			const before = new Set(journal?.cells.map((c) => c.id));
 			const next = await run((j) => journalApi.addCell(j.id, { role, ...(role === "code" ? { lang: "python" } : {}) }, afterId));
-			const added = next?.cells.find((c) => !before.has(c.id));
-			if (added) setEditingId(added.id);
+			const index = next ? next.cells.findIndex((c) => !before.has(c.id)) : -1;
+			if (!next || index < 0) return;
+			const added = next.cells[index]!;
+			// An add is a removal played backwards.
+			const step = removalStep(added, index);
+			record(next.id, { undo: step.redo, redo: step.undo });
+			setEditingId(added.id);
 		},
-		[journal, run],
+		[journal, run, record, removalStep],
+	);
+
+	const patchCell = useCallback(
+		async (cell: JournalCell, patch: CellPatch) => {
+			const back = inversePatch(cell, patch);
+			const next = await run((j) => journalApi.patchCell(j.id, cell.id, patch, cell.updatedAt));
+			if (!next) return;
+			record(next.id, {
+				undo: async (j) => ({ journal: await journalApi.patchCell(j.id, cell.id, back), focus: cell.id }),
+				redo: async (j) => ({ journal: await journalApi.patchCell(j.id, cell.id, patch), focus: cell.id }),
+			});
+		},
+		[run, record],
+	);
+
+	const moveCellTo = useCallback(
+		async (cellId: string, to: number) => {
+			const from = journalRef.current?.cells.findIndex((c) => c.id === cellId) ?? -1;
+			const next = await run((j) => journalApi.moveCell(j.id, cellId, to));
+			if (!next || from < 0) return;
+			const landed = next.cells.findIndex((c) => c.id === cellId);
+			record(next.id, {
+				undo: async (j) => ({ journal: await journalApi.moveCell(j.id, cellId, from), focus: cellId }),
+				redo: async (j) => ({ journal: await journalApi.moveCell(j.id, cellId, landed), focus: cellId }),
+			});
+		},
+		[run, record],
+	);
+
+	/** Delete a cell (undoable) → the cell to focus next, if any. */
+	const deleteCell = useCallback(
+		async (cellId: string): Promise<string | undefined> => {
+			const index = journalRef.current?.cells.findIndex((c) => c.id === cellId) ?? -1;
+			const cell = index >= 0 ? journalRef.current!.cells[index]! : undefined;
+			const next = await run((j) => journalApi.deleteCell(j.id, cellId));
+			if (!next || !cell) return undefined;
+			record(next.id, removalStep(cell, index));
+			setEditingId((id) => (id === cellId ? null : id));
+			flash(`Cell deleted — ${formatBinding(bindingForAction("journal-undo"))} to undo.`);
+			return neighbourAt(next, index);
+		},
+		[run, record, removalStep, flash],
 	);
 
 	/** Focus a cell's root (command mode) and bring it into view. */
@@ -250,6 +355,36 @@ export function JournalView({
 		el.focus({ preventScroll: true });
 		el.scrollIntoView({ block: "nearest" });
 	}, []);
+
+	/** Step the notebook's history; lands on the cell the step touched. */
+	const travel = useCallback(
+		async (direction: "undo" | "redo") => {
+			const h = historyRef.current;
+			const j = journalRef.current;
+			if (!j || h.busy) return;
+			const step = h.id === j.id ? (direction === "undo" ? h.undo : h.redo).pop() : undefined;
+			if (!step) {
+				flash(direction === "undo" ? "Nothing to undo." : "Nothing to redo.", 2000);
+				return;
+			}
+			h.busy = true;
+			try {
+				const { journal: next, focus } = await step[direction](j);
+				setJournal(next);
+				setError(null);
+				(direction === "undo" ? h.redo : h.undo).push(step);
+				setEditingId(null);
+				requestAnimationFrame(() => (focus ? focusCell(focus) : scrollRef.current?.focus({ preventScroll: true })));
+			} catch (err) {
+				// The cell changed under the step (another writer) — drop it.
+				setError(`Couldn't ${direction}: ${err instanceof Error ? err.message : String(err)}`);
+				void load();
+			} finally {
+				h.busy = false;
+			}
+		},
+		[flash, focusCell, load],
+	);
 
 	// A fresh notebook is one empty markdown cell: open straight into editing it.
 	const autoEditedRef = useRef<string | null>(null);
@@ -288,8 +423,8 @@ export function JournalView({
 	//   (in edit mode Mod+L is the cell's inline ask)
 	//   Esc on a focused cell → scroll mode (the container takes focus)
 	//   Tab → the top cell · ↑/↓ → previous / next cell
-	const keysRef = useRef({ cells: [] as string[], editingId: null as string | null, addCell, rateCell, extractCell });
-	keysRef.current = { cells: journal?.cells.map((c) => c.id) ?? [], editingId, addCell, rateCell, extractCell };
+	const keysRef = useRef({ cells: [] as string[], editingId: null as string | null, addCell, rateCell, extractCell, deleteCell, travel });
+	keysRef.current = { cells: journal?.cells.map((c) => c.id) ?? [], editingId, addCell, rateCell, extractCell, deleteCell, travel };
 	useEffect(() => {
 		if (!loaded) return;
 		const onKey = (e: KeyboardEvent) => {
@@ -321,6 +456,11 @@ export function JournalView({
 				return;
 			}
 			if (isTypingSurface(e)) return; // edit mode: the cell owns the rest
+			if (eventMatchesAction(e, "journal-undo") || eventMatchesAction(e, "journal-redo")) {
+				claim();
+				void keysRef.current.travel(eventMatchesAction(e, "journal-undo") ? "undo" : "redo");
+				return;
+			}
 			if (onCellRoot && eventMatchesAction(e, "journal-exit-cell")) {
 				claim();
 				root.focus({ preventScroll: true });
@@ -348,6 +488,11 @@ export function JournalView({
 				if (eventMatchesAction(e, "journal-extract-cell")) {
 					claim();
 					void keysRef.current.extractCell(cellId);
+					return;
+				}
+				if (eventMatchesAction(e, "journal-delete-cell")) {
+					claim();
+					void keysRef.current.deleteCell(cellId).then((nextId) => (nextId ? focusCell(nextId) : root.focus({ preventScroll: true })));
 					return;
 				}
 				const i = cells.indexOf(cellId);
@@ -547,12 +692,11 @@ export function JournalView({
 								editing={editingId === cell.id}
 								onEdit={() => setEditingId(cell.id)}
 								onDone={() => setEditingId((id) => (id === cell.id ? null : id))}
-								onCommit={async (patch: CellPatch) => {
-									await run((j) => journalApi.patchCell(j.id, cell.id, patch, cell.updatedAt));
-								}}
+								onCommit={(patch: CellPatch) => patchCell(cell, patch)}
 								onAddBelow={() => void addCell(cell.role === "code" ? "code" : "reflection", cell.id)}
-								onMove={(to) => void run((j) => journalApi.moveCell(j.id, cell.id, to))}
-								onDelete={() => void run((j) => journalApi.deleteCell(j.id, cell.id))}
+								onMove={(to) => void moveCellTo(cell.id, to)}
+								onDelete={() => void deleteCell(cell.id)}
+								onHistory={(direction) => void travel(direction)}
 								onRun={() => (cell.role === "agent" ? runAgent(cell.id) : runCell(cell.id))}
 								onAsk={(q) => askCell(cell.id, q)}
 								running={running.has(cell.id)}

@@ -20,11 +20,54 @@ export function clipExtensionSetup(origin: string, token: string): string {
 	return JSON.stringify({ server: origin, token });
 }
 
+type ClientStatus = "connected" | "not-found" | "failed" | "not-installed";
+interface ConnectRow {
+	client: string;
+	status: ClientStatus;
+	detail?: string;
+}
+
+const CLIENT_LABELS: Record<string, string> = {
+	"claude-code": "Claude Code",
+	"claude-desktop": "Claude Desktop",
+	"chrome-extension": "Chrome extension",
+};
+
+/** Hand the token to the Socratech Clip extension's content script, if installed
+ *  (extensions/chrome/connect.js). It checks the token against this origin first. */
+function connectExtension(token: string): Promise<ConnectRow> {
+	return new Promise((resolve) => {
+		const nonce = crypto.randomUUID();
+		const finish = (row: Omit<ConnectRow, "client">) => {
+			clearTimeout(timer);
+			window.removeEventListener("message", onMessage);
+			resolve({ client: "chrome-extension", ...row });
+		};
+		const onMessage = (event: MessageEvent) => {
+			const data = event.data as { type?: string; nonce?: string; ok?: boolean; error?: string } | null;
+			if (event.source !== window || data?.type !== "socratech-clip-connected" || data.nonce !== nonce) return;
+			finish(data.ok ? { status: "connected" } : { status: "failed", detail: data.error });
+		};
+		const timer = setTimeout(() => finish({ status: "not-installed" }), 4000);
+		window.addEventListener("message", onMessage);
+		window.postMessage({ type: "socratech-clip-setup", token, nonce }, window.location.origin);
+	});
+}
+
+function statusText(row: ConnectRow): string {
+	if (row.status === "connected") return "connected";
+	if (row.status === "not-found") return "not installed";
+	if (row.status === "not-installed") return "not installed (load extensions/chrome)";
+	return "failed";
+}
+
 export function ClaudeSection() {
 	const [token, setToken] = useState<string | null>(null);
 	const [failed, setFailed] = useState(false);
 	const [copied, setCopied] = useState(false);
 	const [setupCopied, setSetupCopied] = useState(false);
+	const [connecting, setConnecting] = useState(false);
+	const [rows, setRows] = useState<ConnectRow[] | null>(null);
 	const [endpoint, setEndpoint] = useState("http://localhost:3000/api/mcp");
 
 	useEffect(() => {
@@ -35,9 +78,28 @@ export function ClaudeSection() {
 			.catch(() => setFailed(true));
 	}, []);
 
+	const connect = async () => {
+		if (!token) return;
+		setConnecting(true);
+		setRows(null);
+		try {
+			const [server, extension] = await Promise.all([
+				fetch("/api/settings/mcp/connect", { method: "POST" })
+					.then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+					.then((body: { clients: ConnectRow[] }) => body.clients)
+					.catch((err: unknown) => [{ client: "claude-code", status: "failed" as const, detail: String(err) }]),
+				connectExtension(token),
+			]);
+			setRows([...server, extension]);
+		} finally {
+			setConnecting(false);
+		}
+	};
+
 	const rotate = () => {
 		setCopied(false);
 		setSetupCopied(false);
+		setRows(null);
 		fetch("/api/settings/mcp", { method: "POST" })
 			.then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
 			.then((body: { token: string }) => setToken(body.token))
@@ -51,6 +113,29 @@ export function ClaudeSection() {
 
 	return (
 		<>
+			<div className="flex flex-col gap-1.5" data-testid="claude-connect">
+				<div className="flex items-center gap-2">
+					<button
+						type="button"
+						onClick={() => void connect()}
+						disabled={connecting}
+						className="rounded-md border bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90 disabled:opacity-60"
+					>
+						{connecting ? "Connecting…" : "Connect Claude"}
+					</button>
+					<span className="text-xs text-muted-foreground/70">Sets up Claude Code, Claude Desktop and the Chrome extension on this computer.</span>
+				</div>
+				{rows && (
+					<ul className="flex flex-col gap-0.5 text-xs" data-testid="claude-connect-results">
+						{rows.map((row) => (
+							<li key={row.client} className={row.status === "failed" ? "text-destructive" : row.status === "connected" ? "" : "text-muted-foreground"}>
+								{CLIENT_LABELS[row.client] ?? row.client}: {statusText(row)}
+								{row.detail ? ` — ${row.detail}` : ""}
+							</li>
+						))}
+					</ul>
+				)}
+			</div>
 			<SettingsRow label="Endpoint" hint="Streamable HTTP. Works while this app is running.">
 				<code className="font-mono text-xs">{endpoint}</code>
 			</SettingsRow>
@@ -70,13 +155,13 @@ export function ClaudeSection() {
 					</button>
 				</div>
 				<span className="text-xs text-muted-foreground/70">
-					The token lets Claude read your ideas and record judgments. A new token disconnects every client using the old one.
+					The token lets Claude read your ideas and record judgments. A new token disconnects every client using the old one — press Connect Claude again after.
 				</span>
 			</div>
 			<div className="flex flex-col gap-1.5" data-testid="clip-extension-setup">
 				<span className="font-prose text-(length:--lh-prose-size)">Chrome extension (web clip)</span>
 				<span className="text-xs text-muted-foreground/70">
-					Load <code className="font-mono">extensions/chrome</code> unpacked, open its options, and paste this setup. It uses the same token.
+					Load <code className="font-mono">extensions/chrome</code> unpacked, then press Connect Claude above. Or paste this setup into its options by hand.
 				</span>
 				<div className="flex gap-2">
 					<button
