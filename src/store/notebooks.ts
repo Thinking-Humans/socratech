@@ -76,8 +76,8 @@ function readJson(file: string): unknown {
 
 /**
  * Move every legacy `data/journals/<id>.json` into the notebook format,
- * then the JSON into `data/journals/.migrated/`. A journal whose notebook
- * already exists (an interrupted earlier run) is only moved. Unreadable
+ * then the JSON into `data/journals/.migrated/`. A journal whose .py and
+ * sidecar both exist already (an interrupted earlier run) is only moved. Unreadable
  * files stay where they are. The legacy opt-out list merges into the new
  * one and moves too. Safe to call again: nothing left means nothing done.
  */
@@ -103,7 +103,9 @@ export function migrateLegacyJournals(): { migrated: string[]; skipped: string[]
 		const id = name.slice(0, -5);
 		if (!ID_RE.test(id)) continue;
 		try {
-			if (!fs.existsSync(notebookPyFile(id))) {
+			// Both files = an earlier run finished this one. A lone .py (a crash
+			// before the sidecar landed) is written again from the JSON.
+			if (!fs.existsSync(notebookPyFile(id)) || !fs.existsSync(notebookSidecarFile(id))) {
 				const journal = readJson(path.join(legacy, name)) as Journal | undefined;
 				if (!journal || typeof journal !== "object" || !Array.isArray(journal.cells)) {
 					console.warn(`[notebooks] left ${name} in place: not a readable journal`);

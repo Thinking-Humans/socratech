@@ -522,6 +522,9 @@ interface ParsedCell {
 	/** The id the cell function's name carries; null = anonymous. */
 	nameId: string | null;
 	shape: ParsedKind;
+	/** marimo dropped this cell's name (`@app.function`, `@app.class_definition`,
+	 *  `_unparsable_cell`) — not a cell the learner added. */
+	stripped?: true;
 }
 
 function dedent4(lines: string[]): string {
@@ -643,8 +646,9 @@ export function parseMarimoCells(py: string): { cells: ParsedCell[]; appTitle?: 
 			}
 			const code = dedent4(body);
 			const shape = classify(code);
-			if (shape.kind === "python" && code.trim() === MO_IMPORT) continue; // the setup cell
-			cells.push({ nameId: cellIdFromFnName(name), shape });
+			const nameId = cellIdFromFnName(name);
+			if (nameId === null && shape.kind === "python" && code.trim() === MO_IMPORT) continue; // the generated setup cell
+			cells.push({ nameId, shape });
 			continue;
 		}
 		if (line.startsWith("app._unparsable_cell(")) {
@@ -656,11 +660,12 @@ export function parseMarimoCells(py: string): { cells: ParsedCell[]; appTitle?: 
 			v = v.replace(/\n[ \t]*$/, "");
 			const nameM = /name\s*=\s*/.exec(text.slice(lit.end));
 			const nameLit = nameM ? readPyString(text, lit.end + nameM.index + nameM[0].length) : null;
-			cells.push({ nameId: nameLit ? cellIdFromFnName(nameLit.value) : null, shape: { kind: "python", code: dedent4(v.split("\n")) } });
+			cells.push({ nameId: nameLit ? cellIdFromFnName(nameLit.value) : null, shape: { kind: "python", code: dedent4(v.split("\n")) }, stripped: true });
 			continue;
 		}
 		if (/^@app\.(function|class_definition)\b/.test(line)) {
-			cells.push({ nameId: null, shape: { kind: "python", code: block.filter((l) => !/^@app\./.test(l)).join("\n") } });
+			// The whole def is the cell's code, at column 0 (no dedent).
+			cells.push({ nameId: null, shape: { kind: "python", code: block.filter((l) => !/^@app\./.test(l)).join("\n") }, stripped: true });
 			continue;
 		}
 		if (/^with\s+app\.setup\b/.test(line)) {
@@ -699,6 +704,7 @@ const trimTrailingBlankLines = (s: string) => s.replace(/(\n[ \t]*)+$/, "");
 
 /** The text a parsed cell carries, for a given sidecar role guess. */
 function candidateText(shape: ParsedKind, meta: NotebookSidecarCell | undefined): string[] {
+	if (shape.kind !== "python" && meta?.role === "code" && isPythonCell(meta)) return [shape.code, trimTrailingBlankLines(shape.code)];
 	if (shape.kind === "agent") return [shape.prompt];
 	if (shape.kind === "md") {
 		if (meta?.role === "code") {
@@ -717,8 +723,14 @@ function candidateText(shape: ParsedKind, meta: NotebookSidecarCell | undefined)
  * .py now says something else — then the shape wins and fields that no
  * longer apply (a run counter on markdown, …) are dropped.
  */
-function buildCell(shape: ParsedKind, id: string, meta: NotebookSidecarCell | undefined, now: string): { cell: JournalCell; edited: boolean } {
+function buildCell(parsedShape: ParsedKind, id: string, meta: NotebookSidecarCell | undefined, now: string): { cell: JournalCell; edited: boolean } {
 	const metaPython = meta?.role === "code" && isPythonCell(meta);
+	let shape = parsedShape;
+	// Python code that happens to look like a markdown or agent cell (a
+	// learner's own `mo.md(...)`) stays Python while its text is unchanged.
+	if (metaPython && shape.kind !== "python" && [shape.code, trimTrailingBlankLines(shape.code)].some((t) => textHash(t) === meta!.sourceHash)) {
+		shape = { kind: "python", code: shape.code };
+	}
 	let rest: Omit<JournalCell, "id" | "role" | "source">;
 	if (meta) {
 		const { id: _id, role: _role, sourceHash: _hash, ...m } = meta;
@@ -811,6 +823,17 @@ export function readMarimoNotebook(py: string, sidecar: unknown, opts: MarimoRea
 			}
 		}
 	});
+	// 2b. marimo strips names itself: a cell that is only a function / class
+	// is saved as `@app.function` / `@app.class_definition`, an unparsable
+	// one as `_unparsable_cell(name="_")`. When that cell was also edited, the
+	// text no longer matches; if exactly one such cell and exactly one
+	// unclaimed Python sidecar entry are left, they are the same cell.
+	const stripped = parsed.cells.map((p, i) => i).filter((i) => ids[i] === null && parsed.cells[i]!.stripped);
+	const orphans = [...metaById.values()].filter((m) => !claimed.has(m.id) && m.role === "code" && isPythonCell(m));
+	if (stripped.length === 1 && orphans.length === 1) {
+		ids[stripped[0]!] = orphans[0]!.id;
+		claimed.add(orphans[0]!.id);
+	}
 	// 3. The rest get fresh ids.
 	parsed.cells.forEach((p, i) => {
 		if (ids[i] !== null) return;

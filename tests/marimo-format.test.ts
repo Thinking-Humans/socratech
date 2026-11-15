@@ -75,6 +75,10 @@ function sample(): Journal {
 			cell("cell_00000000000c", "code", "fn main() {}", { lang: "rust", output: "pasted" }),
 			...TRICKY.map((text, i) => cell(`cell_tricky${String(i).padStart(2, "0")}`, i % 2 ? "reflection" : "agent", text, i % 2 ? {} : { output: TRICKY[TRICKY.length - 1 - i]! })),
 			...TRICKY.map((text, i) => cell(`cell_code${String(i).padStart(2, "0")}`, "code", text, { lang: i % 2 ? "cpp" : "python" })),
+			// Python that looks like the generated shapes stays Python.
+			cell("cell_lookalike1", "code", 'mo.md(r"""\nhi\n""")', { lang: "python", output: "md", executionCount: 7 }),
+			cell("cell_lookalike2", "code", '_prompt = r"""\nq\n"""\nmo.callout(mo.md(_prompt), kind="info")\n', { lang: "python", executionCount: 8 }),
+			cell("cell_lookalike3", "code", "import marimo as mo", { lang: "python" }),
 			cell("odd-id/with spaces", "reflection", "non-identifier id"),
 			cell("c_looks_escaped", "reflection", "id starting c_"),
 			cell("app", "reflection", "reserved id"),
@@ -283,6 +287,23 @@ describe("marimo format: hand edits", () => {
 		assert.equal(r.journal.cells[2]!.id, "cell_a00000000003");
 		assert.equal(r.journal.cells[2]!.output, "1\n");
 		assert.equal(r.journal.cells[2]!.source, "def broken(:\n    pass");
+	});
+
+	it("a function-only cell marimo saved as @app.function keeps its id, edited or not", () => {
+		const j = base();
+		j.cells[1] = { ...j.cells[1]!, source: "def double(x):\n    return x * 2" };
+		const { py, sidecar } = journalToMarimo(j);
+		// What `marimo check --fix` (0.25.2) writes for such a cell: the name is gone.
+		const asFunction = (src: string) =>
+			py.replace(/@app\.cell\ndef cell_a00000000002\(\):\n {4}def double\(x\):\n {8}return x \* 2\n {4}return \(double,\)/, `@app.function\n${src}`);
+		const same = readMarimoNotebook(asFunction("def double(x):\n    return x * 2"), sidecar, { now: T2 });
+		assert.notEqual(asFunction("x"), py);
+		assert.deepEqual(same.journal.cells[1], j.cells[1]);
+		const edited = readMarimoNotebook(asFunction("def double(x):\n    return x + x"), sidecar, { now: T2 });
+		assert.equal(edited.journal.cells[1]!.id, "cell_a00000000002");
+		assert.equal(edited.journal.cells[1]!.source, "def double(x):\n    return x + x");
+		assert.equal(edited.journal.cells[1]!.executionCount, 1);
+		assert.equal(edited.journal.cells[1]!.updatedAt, T2);
 	});
 
 	it("no sidecar: a plain marimo notebook still loads", () => {

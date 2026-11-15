@@ -86,6 +86,17 @@ describe("migration from data/journals", () => {
 		assert.equal(notebookStore.getJournal("jrnl_legacy_b")!.title, legacyB.title);
 		assert.equal(fs.readdirSync(BACKUP).filter((f) => f.startsWith("jrnl_legacy_b.")).length, 2, "the earlier backup is kept too");
 	});
+
+	it("a run that crashed after the .py but before the sidecar is redone from the JSON", () => {
+		const legacyC = journal("jrnl_legacy_c", [cell("c1", "reflection", "Rated", { understanding: { level: "own", hash: "h", at: T } })], {
+			chatId: "chat_c",
+			publications: [{ at: T, siteRepo: "/site", path: "content/posts/2026-11-15-c" }],
+		});
+		fs.writeFileSync(notebookPyFile("jrnl_legacy_c"), journalToMarimo(legacyC).py);
+		fs.writeFileSync(path.join(LEGACY, "jrnl_legacy_c.json"), JSON.stringify(legacyC));
+		assert.deepEqual(migrateLegacyJournals().migrated, ["jrnl_legacy_c"]);
+		assert.deepEqual(notebookStore.getJournal("jrnl_legacy_c"), legacyC);
+	});
 });
 
 describe("notebook store: writes and hand edits", () => {
