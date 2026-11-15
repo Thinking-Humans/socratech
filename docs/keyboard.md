@@ -51,7 +51,7 @@ open.
 | Edit the focused cell | Enter |
 | Next / previous cell | ↓ / ↑ |
 | Rate the focused cell: on my own / with help / couldn't, even with help | 1 / 2 / 3 |
-| Read the focused cell into the graph | G |
+| Read the notebook into the graph | G |
 
 Inline ask: while editing, highlight text (or leave the caret on a line) and
 press Mod+L. **E** explains it in a small box under the cell — follow-ups chat

@@ -15,8 +15,8 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { CodeIcon, MessageSquareQuoteIcon, NotebookPenIcon, PenLineIcon, PlayIcon, PlusIcon, RotateCcwIcon, SendIcon, SparklesIcon } from "lucide-react";
-import { bindingForAction, eventMatchesAction, formatBinding, isTypingSurface, runnableLang, type CellPatch, type Journal, type JournalCellRole, type KeyAction, type UnderstandingLevel } from "@/src/core";
+import { CheckCircle2Icon, CodeIcon, LoaderCircleIcon, NetworkIcon, MessageSquareQuoteIcon, NotebookPenIcon, PenLineIcon, PlayIcon, PlusIcon, RotateCcwIcon, SendIcon, SparklesIcon } from "lucide-react";
+import { bindingForAction, eventMatchesAction, formatBinding, isTypingSurface, notebookGraphStatus, runnableLang, type CellPatch, type Journal, type JournalCellRole, type KeyAction, type UnderstandingLevel } from "@/src/core";
 import { useServerEvent } from "@/components/server-events";
 import { JournalApiError, journalApi } from "@/components/journal/journal-api";
 import { JournalCellView } from "@/components/journal/journal-cell";
@@ -142,8 +142,8 @@ export function JournalView({
 		[journalIdNow, load],
 	);
 
-	/** Cells being read into the graph. */
-	const [extracting, setExtracting] = useState<ReadonlySet<string>>(() => new Set());
+	/** The notebook is being read into the graph. */
+	const [extracting, setExtracting] = useState(false);
 
 	/** Rate a cell; "stuck" runs the prerequisites agent cell placed above it. */
 	const rateCell = useCallback(
@@ -162,37 +162,30 @@ export function JournalView({
 		[journalIdNow, runAgent],
 	);
 
-	/** Read one cell into the graph (only ever on request — or on publish). */
-	const extractCell = useCallback(
-		async (cellId: string) => {
-			if (!journalIdNow) return;
-			setExtracting((s) => new Set(s).add(cellId));
-			try {
-				const { journal: next, outcome, stats } = await journalApi.extractCell(journalIdNow, cellId);
-				setJournal(next);
-				setError(null);
-				const msg: Record<string, string> = {
-					extracted: `Read into the graph: ${stats?.nodes ?? 0} new idea${stats?.nodes === 1 ? "" : "s"}, ${stats?.chains ?? 0} new chain${stats?.chains === 1 ? "" : "s"} (existing ideas were linked, not duplicated).`,
-					unchanged: "Unchanged since it was last read into the graph.",
-					withdrawn: "The cell has no text left — its ideas were withdrawn from the graph.",
-					nothing: "Nothing to read in this cell.",
-					"graph-off": "The knowledge graph is turned off in Settings.",
-					"models-missing": "Pick models in Settings → Models first.",
-				};
-				setNotice(msg[outcome] ?? outcome);
-				setTimeout(() => setNotice(null), 6000);
-			} catch (err) {
-				setError(err instanceof Error ? err.message : String(err));
-			} finally {
-				setExtracting((s) => {
-					const n = new Set(s);
-					n.delete(cellId);
-					return n;
-				});
-			}
-		},
-		[journalIdNow],
-	);
+	/** Read the whole notebook into the graph (only ever on request — or on publish). */
+	const extractNotebook = useCallback(async () => {
+		if (!journalIdNow) return;
+		setExtracting(true);
+		try {
+			const { journal: next, outcome, stats } = await journalApi.extractNotebook(journalIdNow);
+			setJournal(next);
+			setError(null);
+			const msg: Record<string, string> = {
+				extracted: `Read into the graph: ${stats?.nodes ?? 0} new idea${stats?.nodes === 1 ? "" : "s"}, ${stats?.chains ?? 0} new chain${stats?.chains === 1 ? "" : "s"} (existing ideas were linked, not duplicated).`,
+				unchanged: "Unchanged since it was last read into the graph.",
+				withdrawn: "The notebook has no writing of yours left — its ideas were withdrawn from the graph.",
+				nothing: "Nothing to read yet: the graph reads your markdown and aside cells.",
+				"graph-off": "The knowledge graph is turned off in Settings.",
+				"models-missing": "Pick models in Settings → Models first.",
+			};
+			setNotice(msg[outcome] ?? outcome);
+			setTimeout(() => setNotice(null), 6000);
+		} catch (err) {
+			setError(err instanceof Error ? err.message : String(err));
+		} finally {
+			setExtracting(false);
+		}
+	}, [journalIdNow]);
 
 	/** Stream an answer under the cell; the server saves it as an aside. */
 	const askCell = useCallback(
@@ -282,14 +275,32 @@ export function JournalView({
 		return () => window.removeEventListener(JOURNAL_FOCUS_CELL_EVENT, onFocus);
 	}, [loaded, journalIdNow]);
 
+	// Launched from the graph (?run=<cellId>, owner 2026-11-15): start that
+	// agent cell once. The ref survives StrictMode's double effect; the param
+	// is stripped so a reload never re-runs it, and a cell that already has
+	// an answer is left alone.
+	const launchRunRef = useRef<string | null>(null);
+	useEffect(() => {
+		if (!loaded || !journal) return;
+		const params = new URLSearchParams(window.location.search);
+		const runId = params.get("run");
+		if (!runId || launchRunRef.current === runId) return;
+		launchRunRef.current = runId;
+		params.delete("run");
+		const rest = params.toString();
+		window.history.replaceState(window.history.state, "", `${window.location.pathname}${rest ? `?${rest}` : ""}${window.location.hash}`);
+		const cell = journal.cells.find((c) => c.id === runId);
+		if (cell?.role === "agent" && !cell.output?.trim()) void runAgent(runId);
+	}, [loaded, journal, runAgent]);
+
 	// The notebook's keys (Jupyter-style command mode), all from the registry
 	// so Settings → Keyboard rebinds them. Edit-mode keys live in the cell.
 	//   new code / markdown cell below — any mode; agent cell — command mode
 	//   (in edit mode Mod+L is the cell's inline ask)
 	//   Esc on a focused cell → scroll mode (the container takes focus)
 	//   Tab → the top cell · ↑/↓ → previous / next cell
-	const keysRef = useRef({ cells: [] as string[], editingId: null as string | null, addCell, rateCell, extractCell });
-	keysRef.current = { cells: journal?.cells.map((c) => c.id) ?? [], editingId, addCell, rateCell, extractCell };
+	const keysRef = useRef({ cells: [] as string[], editingId: null as string | null, addCell, rateCell, extractNotebook });
+	keysRef.current = { cells: journal?.cells.map((c) => c.id) ?? [], editingId, addCell, rateCell, extractNotebook };
 	useEffect(() => {
 		if (!loaded) return;
 		const onKey = (e: KeyboardEvent) => {
@@ -347,7 +358,7 @@ export function JournalView({
 				}
 				if (eventMatchesAction(e, "journal-extract-cell")) {
 					claim();
-					void keysRef.current.extractCell(cellId);
+					void keysRef.current.extractNotebook();
 					return;
 				}
 				const i = cells.indexOf(cellId);
@@ -399,6 +410,7 @@ export function JournalView({
 
 	const published = journal.publications.at(-1);
 	const publicCount = journal.cells.filter((c) => c.publish).length;
+	const graphStatus = notebookGraphStatus(journal);
 
 	return (
 		<div ref={scrollRef} tabIndex={-1} className={cn("overflow-y-auto outline-none", className)} data-testid="journal-view">
@@ -489,6 +501,27 @@ export function JournalView({
 						)}
 						<button
 							type="button"
+							data-testid="journal-extract"
+							disabled={extracting}
+							onClick={() => void extractNotebook()}
+							title={
+								graphStatus === "current"
+									? "This notebook is in the graph"
+									: graphStatus === "stale"
+										? "Edited since it was read into the graph — read it again to replace its ideas (g)"
+										: "Read this notebook's markdown and asides into the knowledge graph (g)"
+							}
+							className={cn(
+								"flex items-center gap-1 rounded-full border border-border/80 px-2 py-0.5 uppercase tracking-wide transition-colors hover:text-foreground disabled:opacity-60",
+								graphStatus === "current" && "border-primary/50 text-primary",
+								graphStatus === "stale" && "border-warning/60 text-warning",
+							)}
+						>
+							{extracting ? <LoaderCircleIcon className="size-3 animate-spin" /> : graphStatus === "current" ? <CheckCircle2Icon className="size-3" /> : <NetworkIcon className="size-3" />}
+							{extracting ? "Reading…" : graphStatus === "current" ? `In graph · ${journal.graph!.nodes} idea${journal.graph!.nodes === 1 ? "" : "s"}` : graphStatus === "stale" ? "Update graph" : "Add to graph"}
+						</button>
+						<button
+							type="button"
 							data-testid="journal-preview-toggle"
 							onClick={() => setPanel((p) => (p === "preview" ? null : "preview"))}
 							className={cn(
@@ -559,8 +592,6 @@ export function JournalView({
 								asking={asking[cell.id] ?? null}
 								streaming={streaming[cell.id] ?? null}
 								onRate={(level) => void rateCell(cell.id, level)}
-								onExtract={() => void extractCell(cell.id)}
-								extracting={extracting.has(cell.id)}
 								onJournal={setJournal}
 							/>
 						))}

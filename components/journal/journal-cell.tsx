@@ -130,8 +130,6 @@ export interface JournalCellProps {
 	streaming?: string | null;
 	/** The learning bar: rating, cross-check, graph. */
 	onRate: (level: import("@/src/core").UnderstandingLevel | null) => void;
-	onExtract: () => void;
-	extracting: boolean;
 	onJournal: (j: import("@/src/core").Journal) => void;
 }
 
@@ -153,8 +151,6 @@ export function JournalCellView({
 	asking,
 	streaming,
 	onRate,
-	onExtract,
-	extracting,
 	onJournal,
 }: JournalCellProps) {
 	const [source, setSource] = useState(cell.source);
@@ -575,7 +571,7 @@ export function JournalCellView({
 				</div>
 			)}
 			{!editing && (
-				<CellLearningBar journalId={journalId} cell={cell} onRate={onRate} onExtract={onExtract} extracting={extracting} onJournal={onJournal} />
+				<CellLearningBar journalId={journalId} cell={cell} onRate={onRate} onJournal={onJournal} />
 			)}
 		</div>
 	);

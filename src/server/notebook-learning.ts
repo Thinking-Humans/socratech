@@ -4,10 +4,10 @@
  *   rate      the learner's own rating of a cell; "stuck" inserts an agent
  *             cell above it that explains the prerequisites (the client runs it)
  *   check     the agent's cross-check: one question, the learner's answer, a verdict
- *   extract   ONLY on request (a cell) or on publish (every changed
- *             published cell). Each cell is its own graph source; re-extracting
- *             an edited cell first withdraws that cell's earlier contribution.
- *   delete    deleting an extracted cell / notebook withdraws its graph traces
+ *   extract   ONLY on request or on publish. The NOTEBOOK is the graph
+ *             source (owner, 2026-11-15); re-extracting an edited notebook
+ *             first withdraws its earlier contribution.
+ *   delete    deleting an extracted notebook withdraws its graph traces
  */
 
 import { createHash } from "node:crypto";
@@ -17,12 +17,13 @@ import {
 	CHECK_GRADE_SYSTEM_PROMPT,
 	CHECK_QUESTION_SYSTEM_PROMPT,
 	RATEABLE_ROLES,
-	cellGraphStatus,
-	cellSourcePath,
 	checkGradePrompt,
 	checkQuestionPrompt,
-	extractableText,
 	isPrerequisiteCell,
+	legacyCellSourcePath,
+	notebookExtractableText,
+	notebookGraphStatus,
+	notebookSourcePath,
 	parseCheckVerdict,
 	prerequisiteRequest,
 	textHash,
@@ -32,12 +33,12 @@ import { slotsConfigured } from "../core/settings.ts";
 import type { GraphImportOutcome, Journal, UnderstandingCheck, UnderstandingLevel } from "../core/contracts/journal.ts";
 import type { EmissionStats } from "../core/contracts/graph.ts";
 import { extractionStatuses } from "../agent/subagents/extraction.ts";
-import { deleteJournal, deleteJournalCell, insertCellBefore, requireJournal, setCellLearning } from "./journals.ts";
+import { deleteJournal, deleteJournalCell, insertCellBefore, requireJournal, setCellLearning, setNotebookGraph } from "./journals.ts";
 import { NoteError } from "./notes.ts";
 import { strongTextStream } from "./notes-ask.ts";
 import { effectiveSettings, stores } from "./stores.ts";
 
-// ─── graph source per cell ──────────────────────────────────────────────────
+// ─── graph source per notebook ──────────────────────────────────────────────
 
 interface NotesImporter {
 	importNotes(input: { filePath: string; text: string }): Promise<EmissionStats>;
@@ -55,9 +56,14 @@ async function importer(): Promise<NotesImporter> {
 	return extraction;
 }
 
-/** The graph's notes-source id for one cell (same derivation as importNotes). */
-export function cellSourceId(journalId: string, cellId: string): string {
-	return `src_${createHash("sha256").update(cellSourcePath(journalId, cellId)).digest("hex").slice(0, 12)}`;
+/** The graph's notes-source id for a source path (same derivation as importNotes). */
+function sourceIdOf(filePath: string): string {
+	return `src_${createHash("sha256").update(filePath).digest("hex").slice(0, 12)}`;
+}
+
+/** The graph's notes-source id for one notebook. */
+export function notebookSourceId(journalId: string): string {
+	return sourceIdOf(notebookSourcePath(journalId));
 }
 
 function graphGate(): "graph-off" | "models-missing" | null {
@@ -71,94 +77,80 @@ function refuseWhileExtracting(): void {
 	if (extractionStatuses().length) throw new JournalError("An extraction is running — try again when it finishes.", "conflict");
 }
 
-/** Remove one cell's contribution from the graph (ideas only it supported die). */
-function withdrawCell(journalId: string, cellId: string): void {
-	const ids = new Set([cellSourceId(journalId, cellId)]);
+/** Remove a notebook's contribution (and any legacy per-cell one) from the graph. */
+function withdrawNotebook(journal: Journal): void {
+	const ids = new Set([notebookSourceId(journal.id)]);
+	for (const c of journal.cells) if (c.graph) ids.add(sourceIdOf(legacyCellSourcePath(journal.id, c.id)));
 	deleteSourcesTraces(stores.graphStore, ids, "delete-nodes");
 	stores.graphStore.deleteSources(ids);
 }
 
-export type CellExtractOutcome = "extracted" | "unchanged" | "withdrawn" | "nothing" | "graph-off" | "models-missing";
+const hasGraphTraces = (journal: Journal) => journal.graph !== undefined || journal.cells.some((c) => c.graph);
+
+export type NotebookExtractOutcome = "extracted" | "unchanged" | "withdrawn" | "nothing" | "graph-off" | "models-missing";
 
 const extracting = new Set<string>();
 
 /**
- * Extract one cell into the graph — on request or from publish. Unchanged
- * text is a no-op; edited text replaces the cell's earlier contribution; a
- * cell emptied of text withdraws it.
+ * Read a whole notebook into the graph — on request or from publish.
+ * Unchanged text is a no-op; edited text replaces the notebook's earlier
+ * contribution; a notebook emptied of learner writing withdraws it.
  */
-export async function extractCell(id: string, cellId: string): Promise<{ journal: Journal; outcome: CellExtractOutcome; stats?: EmissionStats }> {
+export async function extractNotebook(id: string): Promise<{ journal: Journal; outcome: NotebookExtractOutcome; stats?: EmissionStats }> {
 	const gate = graphGate();
 	if (gate) return { journal: requireJournal(id), outcome: gate };
-	const key = `${id}/${cellId}`;
-	if (extracting.has(key)) throw new JournalError("This cell is already being extracted.", "conflict");
-	extracting.add(key);
+	if (extracting.has(id)) throw new JournalError("This notebook is already being read into the graph.", "conflict");
+	extracting.add(id);
 	try {
 		const journal = requireJournal(id);
-		const cell = journal.cells.find((c) => c.id === cellId);
-		if (!cell) throw new JournalError(`No cell [${cellId}] in journal [${id}].`, "not_found");
-		const text = extractableText(cell);
+		const text = notebookExtractableText(journal);
 		if (text === null) {
-			if (!cell.graph) return { journal, outcome: "nothing" };
+			if (!hasGraphTraces(journal)) return { journal, outcome: "nothing" };
 			refuseWhileExtracting();
-			withdrawCell(id, cellId);
-			return { journal: setCellLearning(id, cellId, { graph: null }), outcome: "withdrawn" };
+			withdrawNotebook(journal);
+			return { journal: setNotebookGraph(id, null), outcome: "withdrawn" };
 		}
 		const hash = textHash(text);
-		if (cell.graph?.hash === hash) return { journal, outcome: "unchanged" };
+		if (journal.graph?.hash === hash && !journal.cells.some((c) => c.graph)) return { journal, outcome: "unchanged" };
 		refuseWhileExtracting();
-		if (cell.graph) withdrawCell(id, cellId);
+		if (hasGraphTraces(journal)) withdrawNotebook(journal);
 		let stats: EmissionStats;
 		try {
-			stats = await (await importer()).importNotes({ filePath: cellSourcePath(id, cellId), text: `# ${journal.title}\n\n${text}` });
+			stats = await (await importer()).importNotes({ filePath: notebookSourcePath(id), text: `# ${journal.title}\n\n${text}` });
 		} catch (err) {
 			throw new JournalError(`Extraction failed: ${err instanceof Error ? err.message : String(err)}`, "invalid");
 		}
-		const updated = setCellLearning(id, cellId, {
-			graph: { hash, at: new Date().toISOString(), nodes: stats.nodes, chains: stats.chains ?? 0 },
-		});
+		const updated = setNotebookGraph(id, { hash, at: new Date().toISOString(), nodes: stats.nodes, chains: stats.chains ?? 0 });
 		return { journal: updated, outcome: "extracted", stats };
 	} finally {
-		extracting.delete(key);
+		extracting.delete(id);
 	}
 }
 
-/** Publish: extract every published cell that is new or changed, one after another (fire-and-forget). */
-export function extractPublishedCells(journal: Journal): GraphImportOutcome {
+/** Publish: read the notebook into the graph when it is new or changed (fire-and-forget). */
+export function extractPublishedNotebook(journal: Journal): GraphImportOutcome {
 	if (process.env.NODE_ENV === "test" && !importerOverride) return "test";
 	const gate = graphGate();
 	if (gate) return gate;
-	const todo = journal.cells.filter((c) => c.publish && extractableText(c) !== null && cellGraphStatus(c) !== "current").map((c) => c.id);
-	if (todo.length === 0) return "unchanged";
-	void (async () => {
-		for (const cellId of todo) {
-			try {
-				await extractCell(journal.id, cellId);
-			} catch (err) {
-				console.info(`[notebook ${journal.id}] cell ${cellId} extraction skipped: ${err instanceof Error ? err.message : String(err)}`);
-			}
-		}
-	})();
+	if (notebookExtractableText(journal) === null && !hasGraphTraces(journal)) return "nothing";
+	if (notebookGraphStatus(journal) === "current" && !journal.cells.some((c) => c.graph)) return "unchanged";
+	void extractNotebook(journal.id).catch((err) => {
+		console.info(`[notebook ${journal.id}] extraction skipped: ${err instanceof Error ? err.message : String(err)}`);
+	});
 	return "started";
 }
 
-/** Delete a cell; an extracted one leaves the graph with it. */
+/** Delete a cell. The notebook's graph contribution goes stale until it is read again. */
 export function deleteNotebookCell(id: string, cellId: string): Journal {
-	const cell = requireJournal(id).cells.find((c) => c.id === cellId);
-	if (cell?.graph) {
-		refuseWhileExtracting();
-		withdrawCell(id, cellId);
-	}
 	return deleteJournalCell(id, cellId);
 }
 
-/** Delete a notebook; every extracted cell leaves the graph with it. */
+/** Delete a notebook; its graph contribution leaves with it. */
 export function deleteNotebook(id: string): boolean {
 	const journal = stores.journalStore.getJournal(id);
-	const extracted = journal?.cells.filter((c) => c.graph) ?? [];
-	if (extracted.length) {
+	if (journal && hasGraphTraces(journal)) {
 		refuseWhileExtracting();
-		for (const c of extracted) withdrawCell(id, c.id);
+		withdrawNotebook(journal);
 	}
 	return deleteJournal(id);
 }

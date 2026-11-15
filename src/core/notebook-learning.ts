@@ -3,11 +3,14 @@
  * the agent's cross-check, per-cell graph extraction, and prerequisite
  * help for a cell the learner couldn't understand. Pure.
  *
- * Graph identity: every extracted cell is its own notes source
- * (`notebook://<journalId>/<cellId>`), so re-extracting an EDITED cell
- * withdraws exactly that cell's earlier contribution (ideas only it
- * supported die; shared ideas keep their other provenance) and reads the
- * new text. Extraction runs only when called for a cell or on publish.
+ * Graph identity (owner, 2026-11-15): the NOTEBOOK is the graph's unit.
+ * One notebook = one notes source (`notebook://<journalId>`) whose text is
+ * every learner-written cell, in order. Re-extracting an edited notebook
+ * withdraws its earlier contribution (ideas only it supported die; shared
+ * ideas keep their other provenance) and reads the new text. Extraction
+ * runs only when asked or on publish. Earlier builds extracted per cell
+ * (`notebook://<journalId>/<cellId>`); those sources are withdrawn the
+ * first time their notebook is read as a whole.
  */
 
 import type { Journal, JournalCell, UnderstandingCheck, UnderstandingLevel } from "./contracts/journal.ts";
@@ -51,11 +54,17 @@ export function extractableText(cell: JournalCell): string | null {
 	return text || null;
 }
 
+/** The text a notebook contributes: its learner-written cells, in order; null = nothing to read. */
+export function notebookExtractableText(journal: Journal): string | null {
+	const parts = journal.cells.map(extractableText).filter((t): t is string => t !== null);
+	return parts.length ? parts.join("\n\n") : null;
+}
+
 /** none = never extracted · current = graph has this text · stale = edited since. */
-export function cellGraphStatus(cell: JournalCell): "none" | "current" | "stale" {
-	if (!cell.graph) return "none";
-	const text = extractableText(cell);
-	return text !== null && textHash(text) === cell.graph.hash ? "current" : "stale";
+export function notebookGraphStatus(journal: Journal): "none" | "current" | "stale" {
+	if (!journal.graph) return "none";
+	const text = notebookExtractableText(journal);
+	return text !== null && textHash(text) === journal.graph.hash ? "current" : "stale";
 }
 
 /** A rating is stale once the cell's text changed after it was given. */
@@ -63,9 +72,26 @@ export function ratingIsStale(cell: JournalCell): boolean {
 	return cell.understanding !== undefined && cell.understanding.hash !== textHash(cell.source);
 }
 
-/** The notes-source path that identifies one cell in the graph. */
-export function cellSourcePath(journalId: string, cellId: string): string {
+/** The notes-source path that identifies one notebook in the graph. */
+export function notebookSourcePath(journalId: string): string {
+	return `notebook://${journalId}`;
+}
+
+/** Legacy per-cell source path (pre-2026-11-15 builds) — only for withdrawal. */
+export function legacyCellSourcePath(journalId: string, cellId: string): string {
 	return `notebook://${journalId}/${cellId}`;
+}
+
+/** The notebook a graph source path points at (notebook or legacy cell form); null = not a notebook. */
+export function parseNotebookSourcePath(filePath: string): { journalId: string; cellId?: string } | null {
+	const m = /^notebook:\/\/([^/]+)(?:\/([^/]+))?$/.exec(filePath);
+	if (!m) return null;
+	return m[2] ? { journalId: m[1]!, cellId: m[2] } : { journalId: m[1]! };
+}
+
+/** Where a notebook source opens: the notebook (a legacy cell source lands on its cell). */
+export function notebookHref(ref: { journalId: string; cellId?: string }): string {
+	return `/notebook/${encodeURIComponent(ref.journalId)}${ref.cellId ? `#cell-${ref.cellId}` : ""}`;
 }
 
 // ─── Prerequisites for a "stuck" cell ───────────────────────────────────────

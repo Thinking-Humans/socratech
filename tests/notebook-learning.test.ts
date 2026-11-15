@@ -1,7 +1,7 @@
 /**
  * Notebooks as the unit of learning (owner, 2026-11-15): ratings, the
  * prerequisites cell for "stuck", the cross-check verdict parser, and
- * per-cell graph extraction (on request / publish; edits replace).
+ * per-notebook graph extraction (on request / publish; edits replace).
  */
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -14,7 +14,7 @@ const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "lh-notebook-learning-"));
 process.env.LH_DATA_DIR = path.join(TMP, "data");
 
 const core = await import("../src/core/notebook-learning.ts");
-const { createJournal, addJournalCell, patchJournalCell, requireJournal } = await import("../src/server/journals.ts");
+const { createJournal, addJournalCell, patchJournalCell, requireJournal, setCellLearning } = await import("../src/server/journals.ts");
 const learning = await import("../src/server/notebook-learning.ts");
 
 const calls: Array<{ filePath: string; text: string }> = [];
@@ -97,50 +97,69 @@ describe("rating a cell", () => {
 	});
 });
 
-describe("graph extraction per cell", () => {
-	it("reads a cell only when asked; unchanged text is a no-op; an edit re-reads it", async () => {
-		const j = notebook({ role: "reflection", source: "A base case ends the recursion." });
-		const cellId = j.cells[0]!.id;
-		const r1 = await learning.extractCell(j.id, cellId);
+describe("graph extraction per notebook", () => {
+	it("reads the whole notebook only when asked; unchanged text is a no-op; an edit re-reads it", async () => {
+		const j = notebook(
+			{ role: "reflection", source: "A base case ends the recursion." },
+			{ role: "code", source: "def f(n): return 1 if n == 0 else n * f(n - 1)" },
+			{ role: "aside", source: "Each call gets its own frame." },
+		);
+		const r1 = await learning.extractNotebook(j.id);
 		assert.equal(r1.outcome, "extracted");
-		assert.deepEqual(calls, [{ filePath: core.cellSourcePath(j.id, cellId), text: "# Recursion\n\nA base case ends the recursion." }]);
-		assert.equal(core.cellGraphStatus(r1.journal.cells[0]!), "current");
-		assert.equal(r1.journal.cells[0]!.graph?.nodes, 2);
+		assert.deepEqual(calls, [{ filePath: core.notebookSourcePath(j.id), text: "# Recursion\n\nA base case ends the recursion.\n\nEach call gets its own frame." }]);
+		assert.equal(core.notebookGraphStatus(r1.journal), "current");
+		assert.equal(r1.journal.graph?.nodes, 2);
 
-		assert.equal((await learning.extractCell(j.id, cellId)).outcome, "unchanged");
+		assert.equal((await learning.extractNotebook(j.id)).outcome, "unchanged");
 		assert.equal(calls.length, 1);
 
-		const edited = patchJournalCell(j.id, cellId, { source: "A base case ends the recursion; without one it never stops." });
-		assert.equal(core.cellGraphStatus(edited.cells[0]!), "stale");
-		assert.equal((await learning.extractCell(j.id, cellId)).outcome, "extracted");
+		const edited = patchJournalCell(j.id, j.cells[0]!.id, { source: "A base case ends the recursion; without one it never stops." });
+		assert.equal(core.notebookGraphStatus(edited), "stale");
+		assert.equal((await learning.extractNotebook(j.id)).outcome, "extracted");
 		assert.equal(calls.length, 2);
 		assert.match(calls[1]!.text, /never stops/);
 	});
-	it("a cell emptied of text withdraws its contribution", async () => {
+	it("a notebook emptied of learner writing withdraws its contribution", async () => {
 		const j = notebook({ role: "reflection", source: "Tail calls can reuse the frame." });
-		const cellId = j.cells[0]!.id;
-		await learning.extractCell(j.id, cellId);
-		patchJournalCell(j.id, cellId, { source: "" });
-		const r = await learning.extractCell(j.id, cellId);
+		await learning.extractNotebook(j.id);
+		patchJournalCell(j.id, j.cells[0]!.id, { source: "" });
+		const r = await learning.extractNotebook(j.id);
 		assert.equal(r.outcome, "withdrawn");
+		assert.equal(r.journal.graph, undefined);
+	});
+	it("nothing to read → nothing; agent and code cells are never read", async () => {
+		const j = notebook({ role: "agent", source: "explain recursion" }, { role: "code", source: "x = 1" });
+		assert.equal((await learning.extractNotebook(j.id)).outcome, "nothing");
+		assert.equal(calls.length, 0);
+	});
+	it("each notebook is one graph source; source paths parse back to the notebook", () => {
+		assert.notEqual(learning.notebookSourceId("jrnl_a"), learning.notebookSourceId("jrnl_b"));
+		assert.match(learning.notebookSourceId("jrnl_a"), /^src_[0-9a-f]{12}$/);
+		assert.deepEqual(core.parseNotebookSourcePath("notebook://jrnl_a"), { journalId: "jrnl_a" });
+		assert.deepEqual(core.parseNotebookSourcePath("notebook://jrnl_a/cell_1"), { journalId: "jrnl_a", cellId: "cell_1" });
+		assert.equal(core.parseNotebookSourcePath("notes/today.md"), null);
+	});
+	it("re-reading a notebook drops legacy per-cell graph state", async () => {
+		const j = notebook({ role: "reflection", source: "Old per-cell idea." });
+		setCellLearning(j.id, j.cells[0]!.id, { graph: { hash: "x", at: "2026-11-15T00:00:00.000Z", nodes: 1, chains: 0 } });
+		const r = await learning.extractNotebook(j.id);
+		assert.equal(r.outcome, "extracted");
 		assert.equal(r.journal.cells[0]!.graph, undefined);
+		assert.ok(r.journal.graph);
 	});
-	it("each cell is its own graph source", () => {
-		assert.notEqual(learning.cellSourceId("jrnl_a", "cell_1"), learning.cellSourceId("jrnl_a", "cell_2"));
-		assert.match(learning.cellSourceId("jrnl_a", "cell_1"), /^src_[0-9a-f]{12}$/);
-	});
-	it("publish extracts only published cells that are new or changed", async () => {
-		const j = notebook({ role: "reflection", source: "Published idea." }, { role: "aside", source: "Private aside." }, { role: "code", source: "x = 1" });
-		assert.equal(learning.extractPublishedCells(requireJournal(j.id)), "started");
+	it("publish reads the notebook when new or changed, then is a no-op", async () => {
+		const j = notebook({ role: "reflection", source: "Published idea." }, { role: "code", source: "x = 1" });
+		assert.equal(learning.extractPublishedNotebook(requireJournal(j.id)), "started");
 		await new Promise((r) => setTimeout(r, 20));
 		assert.deepEqual(calls.map((c) => c.text), ["# Recursion\n\nPublished idea."]);
-		assert.equal(learning.extractPublishedCells(requireJournal(j.id)), "unchanged");
+		assert.equal(learning.extractPublishedNotebook(requireJournal(j.id)), "unchanged");
 	});
-	it("deleting an extracted cell or notebook works and leaves no record", async () => {
+	it("deleting a cell leaves the notebook stale; deleting the notebook works", async () => {
 		const j = notebook({ role: "reflection", source: "Memoization caches subcalls." }, { role: "reflection", source: "Keep me." });
-		await learning.extractCell(j.id, j.cells[0]!.id);
+		await learning.extractNotebook(j.id);
 		const after = learning.deleteNotebookCell(j.id, j.cells[0]!.id);
 		assert.deepEqual(after.cells.map((c) => c.source), ["Keep me."]);
+		assert.equal(core.notebookGraphStatus(after), "stale");
 		assert.equal(learning.deleteNotebook(j.id), true);
 	});
 });

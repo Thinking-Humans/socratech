@@ -4,6 +4,7 @@ import type { GraphSnapshot } from "../core/contracts.ts";
 import type { GraphCostSummary } from "../core/cost-summary.ts";
 import { graphCostSummary } from "../core/cost-summary.ts";
 import { graphSnapshot } from "../core/graph.ts";
+import { notebookHref, parseNotebookSourcePath } from "../core/notebook-learning.ts";
 import { birthSessionPartition } from "../core/session-clusters.ts";
 import {
 	deleteNodeTraces,
@@ -21,8 +22,19 @@ import { callCost } from "./pricing.ts";
  */
 export function graphView(): GraphSnapshot {
 	const organization = stores.sourceOrganizationStore.read();
-	const names = Object.fromEntries(Object.entries(organization.placements).flatMap(([id, p]) => p.name === undefined ? [] : [[id, p.name]]));
-	return graphSnapshot(stores, names);
+	const names: Record<string, string> = Object.fromEntries(Object.entries(organization.placements).flatMap(([id, p]) => p.name === undefined ? [] : [[id, p.name]]));
+	// Notebook sources (notebooks are the graph's unit): the notebook's title
+	// names its cluster and its provenance entry links back to it.
+	const notebookSources: Record<string, { href: string; title: string }> = {};
+	for (const source of stores.graphStore.readSources()) {
+		const ref = parseNotebookSourcePath(source.filePath);
+		if (!ref) continue;
+		const journal = stores.journalStore.getJournal(ref.journalId);
+		if (!journal) continue;
+		notebookSources[source.id] = { href: notebookHref(ref), title: journal.title };
+		names[source.id] ??= journal.title;
+	}
+	return { ...graphSnapshot(stores, names), notebookSources };
 }
 
 /** The graph view's cost surface (GET /api/graph/costs — the 2026-09 cost

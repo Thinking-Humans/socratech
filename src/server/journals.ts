@@ -392,6 +392,22 @@ export function setCellLearning(
 	});
 }
 
+/** Set (or clear, null) the notebook's graph state. Also drops any legacy
+ *  per-cell graph state — the notebook is the graph's unit now. */
+export function setNotebookGraph(id: string, graph: CellGraphState | null): Journal {
+	return mutate(id, (j, now) => {
+		const cells = j.cells.map((c) => {
+			if (!c.graph) return c;
+			const { graph: _legacy, ...rest } = c;
+			return rest;
+		});
+		const next: Journal = { ...j, cells, updatedAt: now };
+		if (graph === null) delete next.graph;
+		else next.graph = graph;
+		return next;
+	});
+}
+
 /** Insert a new cell directly ABOVE `beforeId` → the journal + the new cell's id. */
 export function insertCellBefore(id: string, beforeId: string, init: Omit<NewCellInit, "id" | "origin">): { journal: Journal; cellId: string } {
 	const cellId = newCellId();
