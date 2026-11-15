@@ -8,20 +8,25 @@
 
 import { chatStore } from "../store/chats.ts";
 import { graphStore } from "../store/graph.ts";
+import { sourceOrganizationStore } from "../store/source-organization.ts";
 import { jobStore } from "../store/jobs.ts";
 import { journalStore } from "../store/journals.ts";
 import { brainStore } from "../store/brain.ts";
 import { settingsStore } from "../store/settings.ts";
+import { themeStore } from "../store/themes.ts";
 import { resolveSettings, type EffectiveSettings } from "../core/settings-resolution.ts";
 import { syncCustomProvider } from "./custom-provider.ts";
+import { configureWorkerRequestAdmission } from "../agent/worker-request-admission.ts";
 /** The wired adapters. Satisfies core/graph.ts's GraphDeps structurally. */
 export const stores = {
 	chatStore,
 	graphStore,
+	sourceOrganizationStore,
 	jobStore,
 	journalStore,
 	settingsStore,
 	brainStore,
+	themeStore,
 };
 
 export type Stores = typeof stores;
@@ -37,6 +42,9 @@ export type Stores = typeof stores;
 export function effectiveSettings(): EffectiveSettings {
 	return resolveSettings(settingsStore.readSettings());
 }
+
+// Runtime policy is supplied at the composition root, never imported by agents.
+configureWorkerRequestAdmission(() => effectiveSettings().agent.workerRequestConcurrency);
 
 // Boot: register the custom endpoint (when configured) into piModels(); the
 // POST /api/custom-provider route re-syncs after every connect.

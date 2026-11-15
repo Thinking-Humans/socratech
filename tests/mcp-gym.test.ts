@@ -36,6 +36,7 @@ function memoryGraph(seed: GraphNode[] = [], chains: GraphChain[] = []) {
 		readImprovisations: () => [...judgments],
 		upsertSource: (s: NotesSource) => void sources.set(s.id, s),
 		readSources: () => [...sources.values()],
+		deleteSources: (ids: Iterable<string>) => [...ids].reduce((n, id) => n + Number(sources.delete(id)), 0),
 		appendSourceUsage: () => {},
 		readPositions: () => positions,
 		writePositions: (p: Record<string, { x: number; y: number }>) => void (positions = p),

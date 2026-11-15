@@ -48,10 +48,11 @@ export function PublishingSection() {
 		const body = (await res.json().catch(() => ({}))) as { settings?: UserSettings; error?: string };
 		if (!res.ok) {
 			setError(body.error ?? "Could not save publishing settings.");
-			return;
+			return false;
 		}
 		setRecord(body.settings?.publishing ?? {});
 		notifySettingsSaved("publishing");
+		return true;
 	};
 
 	return (
@@ -63,7 +64,7 @@ export function PublishingSection() {
 						placeholder="/home/me/blog"
 						ariaLabel="Site repo path"
 						testid="publishing-site-repo"
-						onCommit={(v) => void save({ siteRepo: v })}
+						onCommit={(v) => save({ siteRepo: v })}
 					/>
 				</SettingsRow>
 				<SettingsRow label="Content folder" hint="Inside the repo. Posts land in <folder>/<date>-<slug>/.">
@@ -71,7 +72,7 @@ export function PublishingSection() {
 						value={record.contentDir ?? ""}
 						placeholder="content/posts"
 						ariaLabel="Content folder"
-						onCommit={(v) => void save({ contentDir: v })}
+						onCommit={(v) => save({ contentDir: v })}
 					/>
 				</SettingsRow>
 				<SettingsRow label="Site URL" hint="For post links, e.g. https://me.github.io/blog">
@@ -79,7 +80,7 @@ export function PublishingSection() {
 						value={record.baseUrl ?? ""}
 						placeholder="https://…"
 						ariaLabel="Site URL"
-						onCommit={(v) => void save({ baseUrl: v })}
+						onCommit={(v) => save({ baseUrl: v })}
 					/>
 				</SettingsRow>
 			</SettingsGroup>
