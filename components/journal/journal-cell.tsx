@@ -10,10 +10,14 @@
  * the whole cell — the answer streams below and lands as a private aside.
  * The draft lives here while editing, so a refetch triggered by another
  * writer (turn-end fill, MCP) never clobbers what is being typed.
+ * Text highlighted in the RENDERED cell (its body, output or agent answer)
+ * offers Ask / Explain (owner, 2026-11-17) — the same inline-ask box, under
+ * the cell.
  */
 
 import { useEffect, useRef, useState } from "react";
-import { ArrowDownIcon, ArrowUpIcon, EyeIcon, EyeOffIcon, LoaderCircleIcon, PaperclipIcon, PlayIcon, SparklesIcon, Trash2Icon } from "lucide-react";
+import { createPortal } from "react-dom";
+import { ArrowDownIcon, ArrowUpIcon, EyeIcon, EyeOffIcon, LayersIcon, LoaderCircleIcon, PaperclipIcon, PlayIcon, SparklesIcon, Trash2Icon } from "lucide-react";
 import {
 	JOURNAL_CELL_ROLES,
 	MEDIA_ACCEPT,
@@ -29,6 +33,7 @@ import {
 } from "@/src/core";
 import { journalApi } from "@/components/journal/journal-api";
 import { InlineAskBox, type InlineAskRequest } from "@/components/journal/inline-ask";
+import type { InlineAskMode } from "@/src/core";
 import { CellLearningBar } from "@/components/journal/cell-learning";
 import { bindingForAction, eventBinding } from "@/src/core";
 import { MessageResponse } from "@/components/ai-elements/message";
@@ -107,6 +112,42 @@ function MarkdownWithMedia({ text, journalId }: { text: string; journalId: strin
 	return <>{blocks}</>;
 }
 
+/** The journal view asks a cell to open its ask box on the highlighted text (Mod+L). */
+export const JOURNAL_ASK_SELECTION_EVENT = "lh:journal-ask-selection";
+
+/** Rendered cell content a highlight may be asked about. */
+const ASK_SCOPE = "[data-ask-scope]";
+const BLOCK_TAGS = "p, li, pre, h1, h2, h3, h4, h5, h6, blockquote, tr, br, div";
+
+/** A range's text as the learner reads it: a formula as its TeX source, one
+ *  line per block, no button labels. */
+function rangeText(range: Range): string {
+	const holder = document.createElement("div");
+	holder.append(range.cloneContents());
+	for (const el of holder.querySelectorAll("button, [aria-hidden=true]:not(.katex-html)")) el.remove();
+	for (const formula of holder.querySelectorAll(".katex")) {
+		const tex = formula.querySelector('annotation[encoding="application/x-tex"]')?.textContent;
+		formula.replaceWith(tex ? `$${tex}$` : (formula.querySelector(".katex-html")?.textContent ?? ""));
+	}
+	for (const block of holder.querySelectorAll(BLOCK_TAGS)) block.after("\n");
+	return (holder.textContent ?? "").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+/** The text highlighted inside ONE rendered cell, if any (not a text box's selection). */
+export function selectedCellText(): { cellId: string; cell: HTMLElement; text: string; range: Range } | null {
+	const sel = window.getSelection();
+	if (!sel || sel.isCollapsed || sel.rangeCount === 0) return null;
+	const range = sel.getRangeAt(0);
+	const within = (node: Node | null) => (node instanceof Element ? node : node?.parentElement)?.closest<HTMLElement>(ASK_SCOPE) ?? null;
+	const from = within(range.startContainer);
+	const to = within(range.endContainer);
+	const cell = from?.closest<HTMLElement>("[data-cell-id]");
+	if (!from || !to || !cell || to.closest("[data-cell-id]") !== cell) return null;
+	const text = rangeText(range);
+	const cellId = cell.dataset.cellId;
+	return text && cellId ? { cellId, cell, text, range } : null;
+}
+
 export interface JournalCellProps {
 	journalId: string;
 	cell: JournalCell;
@@ -123,6 +164,10 @@ export interface JournalCellProps {
 	onRun: () => Promise<void>;
 	/** Ask about this cell; resolves when the answer has streamed in. */
 	onAsk: (question: string) => Promise<void>;
+	/** Open the flashcards dialog for this cell (F). */
+	onFlashcards: () => void;
+	/** Inline ask → "Save as cell": keep an answer as a private aside below this cell. */
+	onSaveAside: (question: string, answer: string) => void;
 	running: boolean;
 	/** The ask streaming under this cell right now, if any. */
 	asking?: { question: string; text: string } | null;
@@ -166,6 +211,8 @@ export function JournalCellView({
 	onDelete,
 	onRun,
 	onAsk,
+	onSaveAside,
+	onFlashcards,
 	running,
 	asking,
 	streaming,
@@ -215,7 +262,11 @@ export function JournalCellView({
 
 	// Adopt server truth only while NOT editing (the draft is the learner's).
 	useEffect(() => {
-		if (editing) return;
+		if (editing) {
+			// A box opened on the rendered cell has no place in the editor.
+			setInline((box) => (box && box.insertAt === undefined ? null : box));
+			return;
+		}
 		setInline(null);
 		setSource(cell.source);
 		setLang(cell.lang ?? "");
@@ -321,6 +372,78 @@ export function JournalCellView({
 		});
 	};
 
+	// ── Ask about text highlighted in the rendered cell ───────────────────────
+	/** Where the Ask / Explain buttons float (viewport px), while a highlight stands. */
+	const [picked, setPicked] = useState<{ x: number; y: number } | null>(null);
+
+	const askSelection = (mode: InlineAskMode) => {
+		const sel = selectedCellText();
+		setPicked(null);
+		if (!sel || sel.cell !== rootRef.current) return;
+		window.getSelection()?.removeAllRanges();
+		setInline({ mode, selection: sel.text, nonce: ++nonceRef.current });
+	};
+	const askSelectionRef = useRef(askSelection);
+	askSelectionRef.current = askSelection;
+
+	useEffect(() => {
+		if (editing) {
+			setPicked(null);
+			return;
+		}
+		const place = () => {
+			const sel = selectedCellText();
+			if (!sel || sel.cell !== rootRef.current) {
+				setPicked(null);
+				return;
+			}
+			const rect = Array.from(sel.range.getClientRects()).at(-1) ?? sel.range.getBoundingClientRect();
+			setPicked({ x: Math.max(8, Math.min(rect.right - 60, window.innerWidth - 180)), y: Math.min(rect.bottom + 6, window.innerHeight - 40) });
+		};
+		// Only once the highlight has settled (mouse released / a shift-arrow step).
+		const onUp = () => setTimeout(place, 0);
+		const onChange = () => {
+			if (!selectedCellText()) setPicked(null);
+		};
+		const hide = () => setPicked(null);
+		const onAsk = (e: Event) => {
+			const { cellId, mode } = (e as CustomEvent<{ cellId: string; mode: InlineAskMode }>).detail;
+			if (cellId === cell.id) askSelectionRef.current(mode);
+		};
+		document.addEventListener("mouseup", onUp);
+		document.addEventListener("keyup", onUp);
+		document.addEventListener("selectionchange", onChange);
+		window.addEventListener("scroll", hide, true);
+		window.addEventListener(JOURNAL_ASK_SELECTION_EVENT, onAsk);
+		return () => {
+			document.removeEventListener("mouseup", onUp);
+			document.removeEventListener("keyup", onUp);
+			document.removeEventListener("selectionchange", onChange);
+			window.removeEventListener("scroll", hide, true);
+			window.removeEventListener(JOURNAL_ASK_SELECTION_EVENT, onAsk);
+		};
+	}, [editing, cell.id]);
+
+	const inlineBox = inline && (
+		<InlineAskBox
+			journalId={journalId}
+			cell={cell}
+			lang={lang}
+			draft={source}
+			request={inline}
+			onInsert={insertAnswer}
+			onSave={(question, answer) => {
+				setInline(null);
+				onSaveAside(question, answer);
+				requestAnimationFrame(() => (editing ? sourceRef.current : rootRef.current)?.focus({ preventScroll: true }));
+			}}
+			onClose={() => {
+				setInline(null);
+				requestAnimationFrame(() => (editing ? sourceRef.current : rootRef.current)?.focus({ preventScroll: true }));
+			}}
+		/>
+	);
+
 	// Edit-mode keys come from the registry (Settings → Keyboard rebinds them).
 	const onKeyDown = (e: React.KeyboardEvent) => {
 		const native = e.nativeEvent;
@@ -366,10 +489,19 @@ export function JournalCellView({
 		} else if (e.target === sourceRef.current && (eventMatchesAction(native, "journal-undo") || eventMatchesAction(native, "journal-redo"))) {
 			// The text box's own history first; when it has nothing left, the
 			// key leaves the cell and steps the notebook's history instead.
+			// The browser's undo stack is page-wide (queryCommandEnabled stays
+			// true from other, unmounted boxes), so let it try and watch: only a
+			// history input event proves it did something.
 			const direction = eventMatchesAction(native, "journal-undo") ? "undo" : "redo";
-			if (document.queryCommandEnabled(direction)) return;
-			claim();
-			void commit("render").then(() => onHistory(direction));
+			let handled = false;
+			const seen = (ev: Event) => {
+				if ((ev as InputEvent).inputType?.startsWith("history")) handled = true;
+			};
+			document.addEventListener("input", seen, true);
+			setTimeout(() => {
+				document.removeEventListener("input", seen, true);
+				if (!handled) void commit("render").then(() => onHistory(direction));
+			}, 0);
 		}
 	};
 
@@ -377,6 +509,9 @@ export function JournalCellView({
 	const onBlur = (e: React.FocusEvent) => {
 		if (!editing) return;
 		if (rootRef.current?.contains(e.relatedTarget as Node | null)) return;
+		// A hop to the scratchpad (Mod+P) is not leaving the cell: the draft
+		// stays open and focus comes back when the pad hides.
+		if ((e.relatedTarget as Element | null)?.closest?.("[data-scratchpad]")) return;
 		void commit("render");
 	};
 
@@ -443,6 +578,9 @@ export function JournalCellView({
 					<IconButton label="Move down" disabled={index === count - 1} onClick={() => onMove(index + 1)}>
 						<ArrowDownIcon className="size-3.5" />
 					</IconButton>
+					<IconButton label="Make flashcards from this cell (F)" testid="journal-cell-flashcards" onClick={onFlashcards}>
+						<LayersIcon className="size-3.5" />
+					</IconButton>
 					<IconButton label="Delete cell" onClick={onDelete}>
 						<Trash2Icon className="size-3.5" />
 					</IconButton>
@@ -503,20 +641,7 @@ export function JournalCellView({
 							Inline ask: <kbd>I</kbd> insert · <kbd>E</kbd> explain · type to ask · Esc cancel
 						</div>
 					)}
-					{inline && (
-						<InlineAskBox
-							journalId={journalId}
-							cell={cell}
-							lang={lang}
-							draft={source}
-							request={inline}
-							onInsert={insertAnswer}
-							onClose={() => {
-								setInline(null);
-								requestAnimationFrame(() => sourceRef.current?.focus());
-							}}
-						/>
-					)}
+					{inlineBox}
 					{isCode && !draftRunnable && (
 						<textarea
 							aria-label="Recorded output"
@@ -574,7 +699,12 @@ export function JournalCellView({
 					</div>
 				</div>
 			) : (
-				<div className={cn("cursor-text", ROLE_TONE[cell.role])} onClick={onEdit}>
+				<div
+					data-ask-scope
+					className={cn("cursor-text", ROLE_TONE[cell.role])}
+					// A drag that highlighted text is not a click-to-edit.
+					onClick={() => !selectedCellText() && onEdit()}
+				>
 					{rendered.trim() ? (
 						takesMedia ? <MarkdownWithMedia text={rendered} journalId={journalId} /> : <MessageResponse>{rendered}</MessageResponse>
 					) : (
@@ -583,7 +713,7 @@ export function JournalCellView({
 				</div>
 			)}
 			{isAgent && (agentAnswer.trim() || running) && (
-				<div className="mt-2 rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-sm" data-testid="journal-agent-answer">
+				<div data-ask-scope className="mt-2 rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-sm" data-testid="journal-agent-answer">
 					<div className="mb-1 flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-muted-foreground">
 						<SparklesIcon className="size-3 text-primary" />
 						Agent
@@ -592,7 +722,7 @@ export function JournalCellView({
 				</div>
 			)}
 			{renderedOutput && (
-				<div className="mt-1 border-l-2 border-border pl-2 text-sm" data-testid="journal-cell-output">
+				<div data-ask-scope className="mt-1 border-l-2 border-border pl-2 text-sm" data-testid="journal-cell-output">
 					<MessageResponse>{renderedOutput}</MessageResponse>
 				</div>
 			)}
@@ -605,6 +735,34 @@ export function JournalCellView({
 					{asking.text ? <MessageResponse>{asking.text}</MessageResponse> : <span className="text-xs italic text-muted-foreground">thinking…</span>}
 				</div>
 			)}
+			{!editing && inlineBox}
+			{!editing &&
+				picked &&
+				createPortal(
+					<div
+						role="toolbar"
+						aria-label="Ask about the highlighted text"
+						data-testid="journal-selection-ask"
+						className="fixed z-50 flex gap-1"
+						style={{ left: picked.x, top: picked.y }}
+						// Keep the highlight alive through the click.
+						onPointerDown={(e) => e.preventDefault()}
+					>
+						{(["ask", "explain"] as const).map((mode) => (
+							<button
+								key={mode}
+								type="button"
+								data-testid={`journal-selection-${mode}`}
+								onClick={() => askSelection(mode)}
+								className="flex items-center gap-1 rounded-md border border-border bg-popover px-2 py-1 text-xs text-popover-foreground shadow-md transition-colors hover:bg-accent"
+							>
+								{mode === "ask" && <SparklesIcon className="size-3 text-primary" />}
+								{mode === "ask" ? "Ask" : "Explain"}
+							</button>
+						))}
+					</div>,
+					document.body,
+				)}
 			{!editing && (
 				<CellLearningBar journalId={journalId} cell={cell} onRate={onRate} onExtract={onExtract} extracting={extracting} onJournal={onJournal} />
 			)}

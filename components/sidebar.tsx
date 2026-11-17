@@ -715,6 +715,10 @@ function SessionsSidebar() {
 				{/* Notes first (2026-11-15): Today / Graph / the vault, above the session doors. */}
 				{!JOURNAL_ONLY && <NotesSection />}
 
+				{/* Journal-only: no core doors, but an enabled plugin's own door
+				    (Flashcards: its library and review) still shows. */}
+				{JOURNAL_ONLY && <PluginSidebarActions>{null}</PluginSidebarActions>}
+
 				{!JOURNAL_ONLY && (<>
 				{/* Core doors always lead explicit plugin sidebar placements. */}
 				<PluginSidebarActions>

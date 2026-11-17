@@ -2,15 +2,16 @@
 
 /**
  * The inline-ask box (owner, 2026-11-15): opened from a cell being edited
- * with Mod+L, then I (insert) / E (explain) / anything else (ask). It sits
- * under the editor, streams the answer about the highlighted passage, and
+ * with Mod+L, then I (insert) / E (explain) / anything else (ask) — or from
+ * text highlighted in a rendered cell (Ask / Explain, owner 2026-11-17). It
+ * sits under the cell, streams the answer about the highlighted passage, and
  * takes follow-up questions like a tiny chat. Insert mode drops the answer
- * into the cell and closes. Nothing is saved; Esc closes and returns to the
- * text.
+ * into the cell and closes. Nothing is saved unless "Save as cell" is
+ * pressed (the answer becomes a private aside below the cell); Esc closes.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { CornerDownLeftIcon, SparklesIcon, XIcon } from "lucide-react";
+import { CornerDownLeftIcon, ListPlusIcon, SparklesIcon, XIcon } from "lucide-react";
 import { unfenceInsert, type InlineAskMode, type JournalCell } from "@/src/core";
 import { MessageResponse } from "@/components/ai-elements/message";
 import { journalApi } from "@/components/journal/journal-api";
@@ -18,8 +19,9 @@ import { journalApi } from "@/components/journal/journal-api";
 export interface InlineAskRequest {
 	mode: InlineAskMode;
 	selection: string;
-	/** Where an insert lands (the selection's end in the draft). */
-	insertAt: number;
+	/** Where an insert lands (the selection's end in the draft). Absent when
+	 *  the box was opened from a rendered cell: there is no draft to insert into. */
+	insertAt?: number;
 	/** A key typed to open the box — the question's first character. */
 	initial?: string;
 	/** Bumps per open, so reopening restarts the box. */
@@ -37,6 +39,7 @@ export function InlineAskBox({
 	draft,
 	request,
 	onInsert,
+	onSave,
 	onClose,
 }: {
 	journalId: string;
@@ -46,6 +49,8 @@ export function InlineAskBox({
 	draft: string;
 	request: InlineAskRequest;
 	onInsert: (text: string, at: number) => void;
+	/** Keep an answer: it becomes a private aside below the cell. */
+	onSave: (question: string, answer: string) => void;
 	onClose: () => void;
 }) {
 	const [turns, setTurns] = useState<Turn[]>([]);
@@ -73,7 +78,7 @@ export function InlineAskBox({
 					ctrl.signal,
 				);
 				if (ctrl.signal.aborted) return;
-				if (mode === "insert") {
+				if (mode === "insert" && request.insertAt !== undefined) {
 					onInsert(unfenceInsert(text, cell.role), request.insertAt);
 					return;
 				}
@@ -107,8 +112,15 @@ export function InlineAskBox({
 		void send(request.mode === "insert" ? "insert" : "ask", history);
 	};
 
-	const lastAnswer = [...turns].reverse().find((t) => t.role === "assistant")?.text;
+	const lastAnswerAt = turns.findLastIndex((t) => t.role === "assistant");
+	const lastAnswer = turns[lastAnswerAt]?.text;
 	const quote = request.selection.trim().replace(/\s+/g, " ");
+	/** What the saved aside is headed with: the question that answer replied to. */
+	const lastQuestion = () => {
+		const asked = turns.slice(0, lastAnswerAt).findLast((t) => t.role === "user")?.text;
+		const clipped = quote.length > 80 ? `${quote.slice(0, 80)}…` : quote;
+		return asked ? (clipped ? `${asked} — “${clipped}”` : asked) : `Explain “${clipped}”`;
+	};
 
 	return (
 		<div
@@ -172,8 +184,20 @@ export function InlineAskBox({
 				{lastAnswer && request.mode !== "insert" && (
 					<button
 						type="button"
+						data-testid="inline-ask-save"
+						onClick={() => onSave(lastQuestion(), lastAnswer)}
+						className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] uppercase tracking-wider text-muted-foreground hover:bg-accent hover:text-foreground"
+						title="Save this answer as a private aside cell below this cell"
+					>
+						<ListPlusIcon className="size-3" />
+						Save as cell
+					</button>
+				)}
+				{lastAnswer && request.mode !== "insert" && request.insertAt !== undefined && (
+					<button
+						type="button"
 						data-testid="inline-ask-insert"
-						onClick={() => onInsert(unfenceInsert(lastAnswer, cell.role), request.insertAt)}
+						onClick={() => onInsert(unfenceInsert(lastAnswer, cell.role), request.insertAt!)}
 						className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] uppercase tracking-wider text-muted-foreground hover:bg-accent hover:text-foreground"
 						title="Insert this answer into the cell after the highlighted text"
 					>

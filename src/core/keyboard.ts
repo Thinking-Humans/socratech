@@ -39,6 +39,9 @@ export type KeyAction =
 	| "toggle-user-thinking"
 	| "toggle-question-thread"
 	| "search-everything"
+	| "toggle-scratchpad"
+	| "switch-notebook"
+	| `notebook-slot-${NotebookSlotNumber}`
 	| "journal-new-code"
 	| "journal-new-markdown"
 	| "journal-new-agent"
@@ -56,9 +59,14 @@ export type KeyAction =
 	| "journal-rate-helped"
 	| "journal-rate-stuck"
 	| "journal-extract-cell"
+	| "journal-flashcards"
 	| "journal-delete-cell"
 	| "journal-undo"
 	| "journal-redo";
+
+/** The switcher's pinned slots (Harpoon-style): Alt+1 … Alt+9. */
+export type NotebookSlotNumber = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
+export const NOTEBOOK_SLOT_NUMBERS: readonly NotebookSlotNumber[] = [1, 2, 3, 4, 5, 6, 7, 8, 9];
 
 /** Where the cheat sheet groups an action (display only — dispatch is
  *  global; a seam that isn't mounted simply no-ops). */
@@ -87,6 +95,13 @@ export const KEYBOARD_ACTIONS: readonly KeyActionDef[] = [
 	// model selector moved to Mod+Shift+K.
 	{ id: "open-model-picker", label: "Model selector", scope: "global", binding: "mod+shift+k" },
 	{ id: "search-everything", label: "Search everything", scope: "global", binding: "mod+k" },
+	// Owner, 2026-11-17: a scratchpad that floats over the notebook, and a
+	// telescope-style notebook switcher with Harpoon-style pinned slots.
+	{ id: "toggle-scratchpad", label: "Scratchpad (show / hide)", scope: "global", binding: "mod+p" },
+	{ id: "switch-notebook", label: "Switch notebook (recent + pinned)", scope: "global", binding: "mod+o" },
+	...NOTEBOOK_SLOT_NUMBERS.map(
+		(n): KeyActionDef => ({ id: `notebook-slot-${n}`, label: `Jump to pinned notebook ${n}`, scope: "global", binding: `alt+${n}` }),
+	),
 	{ id: "cycle-thinking", label: "Cycle thinking level", scope: "global", binding: "shift+tab" },
 	// Mod+B belongs to the journal (new code cell, owner 2026-11-15).
 	{ id: "toggle-sidebar", label: "Toggle sidebar", scope: "global", binding: "mod+\\" },
@@ -140,6 +155,9 @@ export const KEYBOARD_ACTIONS: readonly KeyActionDef[] = [
 	{ id: "journal-rate-helped", label: "Rate: did it with help", scope: "journal", binding: "2", surfaceOwned: true },
 	{ id: "journal-rate-stuck", label: "Rate: couldn't understand, even with help (explains prerequisites)", scope: "journal", binding: "3", surfaceOwned: true },
 	{ id: "journal-extract-cell", label: "Read the focused cell into the graph", scope: "journal", binding: "g", surfaceOwned: true },
+	// Flashcards from the focused cell (owner, 2026-11-17): the agent drafts,
+	// the learner edits and picks the deck.
+	{ id: "journal-flashcards", label: "Make flashcards from the focused cell", scope: "journal", binding: "f", surfaceOwned: true },
 	// Esc then D deletes; undo/redo cover cell edits, adds, deletes and moves.
 	// In edit mode the text box's own undo goes first; once it has nothing
 	// left, the same key falls through to the notebook's.

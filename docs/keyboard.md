@@ -11,6 +11,9 @@ in-app cheat sheet. See [Getting started](getting-started.md) for setup.
 | Toggle dictation | Mod+D |
 | Open settings | Mod+, |
 | Search everything (every journal) | Mod+K |
+| Scratchpad (show / hide) | Mod+P |
+| Switch notebook (recent + pinned) | Mod+O |
+| Jump to pinned notebook 1 … 9 | Alt+1 … Alt+9 |
 | Model selector | Mod+Shift+K |
 | Cycle thinking level | Shift+Tab |
 | Toggle sidebar | Mod+\\ |
@@ -44,6 +47,7 @@ open.
 | New markdown cell below | Mod+M |
 | New agent cell below (command mode) | Mod+L |
 | Inline ask about the highlighted text (edit mode) | Mod+L, then **I** insert · **E** explain · type to ask |
+| Ask about text highlighted in a rendered cell | Mod+L (or the floating **Ask** / **Explain** buttons) |
 | Run cell (edit mode; agent cells run the agent) | Mod+Enter |
 | Run cell + new cell below (edit mode) | Shift+Enter |
 | Leave cell — once: stop editing · twice: scroll mode | Esc |
@@ -52,6 +56,17 @@ open.
 | Next / previous cell | ↓ / ↑ |
 | Rate the focused cell: on my own / with help / couldn't, even with help | 1 / 2 / 3 |
 | Read the focused cell into the graph | G |
+| Make flashcards from the focused cell | F |
+| Delete the focused cell (command mode — Esc, then D) | D |
+| Undo / redo (cell edits, adds, deletes, moves) | Mod+Z / Mod+Shift+Z |
+
+Undo: while editing, Mod+Z is the text box's own undo (typing, Tab indents,
+inline inserts and pasted embeds all undo there). Once it has nothing left —
+or after leaving the cell — Mod+Z steps the notebook's history: a saved edit,
+an added, deleted or moved cell. A restored cell keeps its id, output and
+rating; its graph state resets (deleting withdrew its ideas), so re-extract
+it if you want it back in the graph. History is per notebook and lives in the
+page (a reload clears it). Runs, agent answers and ratings are not undo steps.
 
 Inline ask: while editing, highlight text (or leave the caret on a line) and
 press Mod+L. **E** explains it in a small box under the cell — follow-ups chat
@@ -60,8 +75,54 @@ cell after the highlight; any other key opens the box with that key as the
 start of your question. The second key works with or without Mod. Esc closes
 the box. Nothing is saved until you save the cell.
 
+Highlight to ask: select text in a rendered cell — its body, a code cell's
+output or an agent answer — and **Ask** / **Explain** float at the highlight
+(Mod+L opens Ask). The same box opens under the cell. **Save as cell** keeps
+the latest answer as a private aside directly below the cell (an undo step);
+otherwise nothing is saved. The edit-mode box has **Save as cell** too.
+
+Flashcards: **F** on a focused cell (or the cards button in its header) asks
+the agent to draft recall cards from that cell — one model call on the strong
+slot. Edit, remove or add cards, **Redraft** to ask again, choose the deck
+(or **New deck…**; the last deck used is preselected) and **Save**. Cards are
+stored by the Flashcards core plugin (Settings → Core plugins must have it
+on); review and manage them from its Flashcards entry in the sidebar. Nothing
+is written until Save, and the notebook itself is not changed.
+
+Rating a cell **3** adds (or reuses) the prerequisites agent cell above it and
+moves focus up to that cell.
+
 Scroll mode = the notebook itself has focus: arrows, Page Up/Down and Space
 scroll it. While editing a code cell, Tab indents (4 spaces).
+
+## Scratchpad
+
+**Mod+P** shows / hides a small plain-text pad floating over whatever is open
+— for asides. No agent, no tabs, no markdown; Tab types a tab. Drag it by its
+bar, resize it from the bottom-right corner. **Esc** (inside it) or Mod+P
+hides it and focus returns to where it was; a cell being edited stays in edit
+mode. It is always the same buffer: the text is saved to `scratchpad.md` in
+the data directory and comes back every time the app opens. Position and size
+are remembered on this device (`lh:scratchpad-frame`).
+
+## Notebook switcher
+
+**Mod+O** lists notebooks: pinned ones first (by slot number), then recently
+opened, then the rest. The notebook you were in last is preselected, so
+Mod+O, Enter flips between two notebooks.
+
+- Type to fuzzy-filter titles. **↑/↓** or **Ctrl+J / Ctrl+K** walk, **Enter**
+  opens, **Esc** closes.
+- **Mod+1 … Mod+9** pins the highlighted notebook to that slot. The same slot
+  again unpins it; a notebook pinned elsewhere swaps places.
+- **Alt+1 … Alt+9** jumps straight to a slot — from anywhere, also while
+  typing, without opening the list. An empty slot does nothing.
+
+Recents and slots are stored on this device (`lh:notebook-recent`,
+`lh:notebook-slots`). Pinned and recent notebooks are kept loaded, so a
+switch paints at once and then refreshes. On macOS, Option+digit types a
+symbol, which the default Alt+1 … 9 binding does not match — rebind the slot
+actions in Settings → Keyboard there.
 
 ## Keyboard layouts
 

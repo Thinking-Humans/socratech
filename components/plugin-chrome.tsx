@@ -77,6 +77,7 @@ export function PluginSidebarActions({ children }: { children: ReactNode }) {
 	const { snapshot } = usePlugins();
 	const actions = placedPluginActions(snapshot.plugins, SIDEBAR_CONTEXT);
 	const count = Children.count(children) + actions.length;
+	if (count === 0) return null;
 	return <div data-testid="sidebar-actions" className={`lh-plugin-scroll mx-3 mb-2 grid max-h-[10.25rem] shrink-0 gap-1.5 overflow-y-auto ${count >= 6 ? "grid-cols-2" : "grid-cols-1"}`}>
 		{children}
 		{actions.map(item => <ActionButton key={item.key} item={item} context={SIDEBAR_CONTEXT} className={SIDEBAR_BUTTON} />)}

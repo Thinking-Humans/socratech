@@ -19,6 +19,7 @@ export { prepareSubmissionImages, prepareSubmissionImageChannels } from "./submi
 export * from "./stores.ts";
 export * from "./journals.ts";
 export * from "./journal-media.ts";
+export * from "./scratchpad.ts";
 export * from "./notebook-learning.ts";
 // The API gate, for the routes proxy.ts exempts (they enforce it in-handler).
 export { apiRequestRefusal } from "./desktop-access.ts";

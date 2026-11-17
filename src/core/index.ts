@@ -29,6 +29,7 @@ export * from "./journal-export.ts";
 // journal-code.ts (2026-11-15): runnable-language names + cell /ask prompt.
 export * from "./journal-code.ts";
 export * from "./journal-search.ts";
+export * from "./notebook-switch.ts";
 export * from "./journal-media.ts";
 export * from "./notebook-learning.ts";
 export * from "./notes.ts";

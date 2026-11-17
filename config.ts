@@ -34,6 +34,8 @@ export const PATHS = {
 	debug: path.join(/* turbopackIgnore: true */ DATA_ROOT, "debug"),
 	/** Learn-in-public journals, one JSON file per journal (src/store/journals.ts). */
 	journals: path.join(/* turbopackIgnore: true */ DATA_ROOT, "journals"),
+	/** The scratchpad (Mod+P): one plain-text file (src/store/scratchpad.ts). */
+	scratchpad: path.join(/* turbopackIgnore: true */ DATA_ROOT, "scratchpad.md"),
 	/** Brain store (docs/brain-store.md): records + vectors + local embedding model cache. */
 	brain: path.join(/* turbopackIgnore: true */ DATA_ROOT, "brain"),
 } as const;

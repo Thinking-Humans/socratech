@@ -4,7 +4,7 @@
  * journal, only the one change. Every mutation returns the fresh journal.
  */
 
-import type { CellPatch, InlineAskInput, UnderstandingCheck, UnderstandingLevel, Journal, JournalCell, JournalCellRole, JournalMetaPatch, JournalSummary, PublishPlan, PublishResult } from "@/src/core";
+import type { CellPatch, FlashcardDraft, InlineAskInput, UnderstandingCheck, UnderstandingLevel, Journal, JournalCell, JournalCellRole, JournalMetaPatch, JournalSummary, PublishPlan, PublishResult } from "@/src/core";
 
 export type { PublishPlan, PublishResult };
 
@@ -114,6 +114,8 @@ export const journalApi = {
 		streamText(`${cellUrl(id, cellId)}/check`, { phase: "question" }, onText, signal),
 	checkGrade: async (id: string, cellId: string, question: string, answer: string) =>
 		call<{ journal: Journal; check: UnderstandingCheck }>(`${cellUrl(id, cellId)}/check`, "POST", { phase: "grade", question, answer }),
+	/** The agent drafts flashcards from one cell (nothing is saved). */
+	draftFlashcards: async (id: string, cellId: string) => (await call<{ drafts: FlashcardDraft[] }>(`${cellUrl(id, cellId)}/flashcards`, "POST")).drafts,
 	plan: async (id: string) => (await call<{ plan: PublishPlan }>(`${base}/${id}/publish`)).plan,
 	publish: async (id: string, confirmDir: string) => (await call<{ result: PublishResult }>(`${base}/${id}/publish`, "POST", { confirmDir })).result,
 };

@@ -14,7 +14,8 @@ const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "lh-journal-notebook-"));
 process.env.LH_DATA_DIR = path.join(TMP, "data");
 
 const { KEYBOARD_ACTIONS, actionForBinding, bindingForAction, eventMatchesAction } = await import("../src/core/keyboard.ts");
-const { newJournal, appendCell } = await import("../src/core/journal.ts");
+const { newJournal, appendCell, removeCell, restoreCell } = await import("../src/core/journal.ts");
+const { parseRestoreCell } = await import("../src/server/journals.ts");
 const { exportJournal, publishedMediaNames } = await import("../src/core/journal-export.ts");
 const { journalAgentPrompt } = await import("../src/core/journal-code.ts");
 const { searchJournals } = await import("../src/core/journal-search.ts");
@@ -51,6 +52,47 @@ describe("notebook key map", () => {
 	it("Mod+K is search-everything; the model picker moved to Mod+Shift+K", () => {
 		assert.equal(actionForBinding("mod+k"), "search-everything");
 		assert.equal(actionForBinding("mod+shift+k"), "open-model-picker");
+	});
+	it("Esc then D deletes; Mod+Z / Mod+Shift+Z step the notebook's history", () => {
+		assert.ok(eventMatchesAction(key({ key: "d" }), "journal-delete-cell"));
+		assert.ok(eventMatchesAction(key({ key: "z", ctrlKey: true }), "journal-undo"));
+		assert.ok(eventMatchesAction(key({ key: "Z", ctrlKey: true, shiftKey: true }), "journal-redo"));
+		assert.ok(!eventMatchesAction(key({ key: "Z", ctrlKey: true, shiftKey: true }), "journal-undo"));
+		// Surface-owned: never in the global map, where Mod+Z would steal every text box's undo.
+		assert.equal(actionForBinding("mod+z"), undefined);
+	});
+});
+
+describe("restoreCell (notebook undo of a delete)", () => {
+	const three = () => {
+		let j = newJournal({ id: "jrnl_u", title: "Undo", now: NOW });
+		for (const id of ["a", "b", "c"]) j = appendCell(j, { id, role: "reflection", source: id }, NOW);
+		return j;
+	};
+	it("puts the whole cell back at its index with its id, rating and output — but not its graph state", () => {
+		const j = three();
+		const b = { ...j.cells[1]!, output: "out", understanding: { level: "own" as const, hash: "h", at: NOW }, graph: { hash: "h", at: NOW, nodes: 2 } as never };
+		const back = restoreCell(removeCell(j, "b", NOW), b, 1, "2026-11-16T00:00:00.000Z");
+		assert.deepEqual(back.cells.map((c) => c.id), ["a", "b", "c"]);
+		assert.equal(back.cells[1]!.output, "out");
+		assert.equal(back.cells[1]!.understanding?.level, "own");
+		assert.equal("graph" in back.cells[1]!, false);
+		assert.equal(back.cells[1]!.updatedAt, "2026-11-16T00:00:00.000Z");
+	});
+	it("clamps the index and refuses a duplicate id", () => {
+		const j = three();
+		const a = j.cells[0]!;
+		assert.deepEqual(restoreCell(removeCell(j, "a", NOW), a, 99, NOW).cells.map((c) => c.id), ["b", "c", "a"]);
+		assert.throws(() => restoreCell(j, a, 0, NOW), /already exists/);
+	});
+	it("parseRestoreCell validates untrusted bodies", () => {
+		assert.equal(parseRestoreCell({ role: "code" }), null);
+		const { cell, index } = parseRestoreCell({ index: 2, restore: { id: "cell_x", role: "code", source: "1", lang: "python", publish: true, executionCount: 3, junk: 1 } })!;
+		assert.equal(index, 2);
+		assert.deepEqual([cell.id, cell.role, cell.lang, cell.executionCount, "junk" in cell], ["cell_x", "code", "python", 3, false]);
+		assert.throws(() => parseRestoreCell({ index: 0, restore: { id: "../x", role: "code" } }), /malformed/);
+		assert.throws(() => parseRestoreCell({ index: 0, restore: { id: "cell_x", role: "nope" } }), /Unknown cell role/);
+		assert.throws(() => parseRestoreCell({ restore: { id: "cell_x", role: "code" } }), /index/);
 	});
 });
 

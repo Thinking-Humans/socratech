@@ -16,10 +16,12 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CodeIcon, MessageSquareQuoteIcon, NotebookPenIcon, PenLineIcon, PlayIcon, PlusIcon, RotateCcwIcon, SendIcon, SparklesIcon } from "lucide-react";
-import { bindingForAction, eventMatchesAction, formatBinding, isTypingSurface, runnableLang, type CellPatch, type Journal, type JournalCell, type JournalCellRole, type KeyAction, type UnderstandingLevel } from "@/src/core";
+import { askAnswerCell, flashcardSourceText, bindingForAction, eventMatchesAction, formatBinding, isTypingSurface, runnableLang, type CellPatch, type Journal, type JournalCell, type JournalCellRole, type KeyAction, type UnderstandingLevel } from "@/src/core";
 import { useServerEvent } from "@/components/server-events";
 import { JournalApiError, journalApi } from "@/components/journal/journal-api";
-import { JournalCellView } from "@/components/journal/journal-cell";
+import { JOURNAL_ASK_SELECTION_EVENT, JournalCellView, selectedCellText } from "@/components/journal/journal-cell";
+import { CellFlashcards } from "@/components/journal/cell-flashcards";
+import { cachedJournal, rememberJournal } from "@/components/journal/journal-cache";
 import { PublishPanel } from "@/components/journal/publish-panel";
 import { JOURNAL_FOCUS_CELL_EVENT } from "@/components/journal/search-everything";
 import { cn } from "@/lib/utils";
@@ -65,7 +67,7 @@ export function JournalView({
 	className?: string;
 }) {
 	/** undefined = loading; null = this session has no journal yet. */
-	const [journal, setJournal] = useState<Journal | null | undefined>(undefined);
+	const [journal, setJournal] = useState<Journal | null | undefined>(() => (journalId ? cachedJournal(journalId) : undefined));
 	const [error, setError] = useState<string | null>(null);
 	const [editingId, setEditingId] = useState<string | null>(null);
 	/** The header panel: the server dry run as preview, or the publish confirm. */
@@ -75,10 +77,18 @@ export function JournalView({
 	/** Cell id → the /ask streaming under it. */
 	const [asking, setAsking] = useState<Record<string, { question: string; text: string }>>({});
 	const [notice, setNotice] = useState<string | null>(null);
+	/** The cell whose flashcards dialog is open (F). */
+	const [cardsFor, setCardsFor] = useState<string | null>(null);
 	/** Agent cell id → its answer streaming in. */
 	const [streaming, setStreaming] = useState<Record<string, string>>({});
 	/** The scroll container — focusing it is the notebook's "scroll mode". */
 	const scrollRef = useRef<HTMLDivElement>(null);
+
+	// A notebook seen before paints from memory while the fresh copy loads
+	// (the switcher's low latency); every copy we hold is remembered.
+	useEffect(() => {
+		if (journal) rememberJournal(journal);
+	}, [journal]);
 
 	const load = useCallback(async () => {
 		try {
@@ -92,8 +102,10 @@ export function JournalView({
 	}, [chatId, journalId]);
 
 	useEffect(() => {
+		const cached = journalId ? cachedJournal(journalId) : undefined;
+		if (cached) setJournal((j) => (j?.id === cached.id ? j : cached));
 		void load();
-	}, [load]);
+	}, [load, journalId]);
 
 	useServerEvent("journals-changed", (e) => {
 		if ((journalId && e.journalId === journalId) || (chatId && e.chatId === chatId) || (journal && e.journalId === journal.id)) void load();
@@ -168,10 +180,20 @@ export function JournalView({
 		[journalIdNow, load],
 	);
 
+	/** Focus a cell's root (command mode) and bring it into view. */
+	const focusCell = useCallback((cellId: string | undefined) => {
+		if (!cellId) return;
+		const el = document.getElementById(`cell-${cellId}`);
+		if (!el) return;
+		el.focus({ preventScroll: true });
+		el.scrollIntoView({ block: "nearest" });
+	}, []);
+
 	/** Cells being read into the graph. */
 	const [extracting, setExtracting] = useState<ReadonlySet<string>>(() => new Set());
 
-	/** Rate a cell; "stuck" runs the prerequisites agent cell placed above it. */
+	/** Rate a cell; "stuck" runs the prerequisites agent cell placed above it
+	 *  and moves focus up to it (owner, 2026-11-17). */
 	const rateCell = useCallback(
 		async (cellId: string, level: UnderstandingLevel | null) => {
 			if (!journalIdNow) return;
@@ -181,11 +203,12 @@ export function JournalView({
 				setError(null);
 				const prereq = prereqCellId ? next.cells.find((c) => c.id === prereqCellId) : undefined;
 				if (prereq && !prereq.output?.trim()) void runAgent(prereq.id);
+				if (prereq) requestAnimationFrame(() => focusCell(prereq.id));
 			} catch (err) {
 				setError(err instanceof Error ? err.message : String(err));
 			}
 		},
-		[journalIdNow, runAgent],
+		[journalIdNow, runAgent, focusCell],
 	);
 
 	/** Read one cell into the graph (only ever on request — or on publish). */
@@ -305,6 +328,20 @@ export function JournalView({
 		[journal, run, record, removalStep],
 	);
 
+	/** Inline ask → "Save as cell": the answer as a private aside right below (undoable). */
+	const saveAside = useCallback(
+		async (afterId: string, question: string, answer: string) => {
+			const before = new Set(journalRef.current?.cells.map((c) => c.id));
+			const next = await run((j) => journalApi.addCell(j.id, { role: "aside", source: askAnswerCell(question, answer) }, afterId));
+			const index = next ? next.cells.findIndex((c) => !before.has(c.id)) : -1;
+			if (!next || index < 0) return;
+			const step = removalStep(next.cells[index]!, index);
+			record(next.id, { undo: step.redo, redo: step.undo });
+			flash("Saved as an aside below.");
+		},
+		[run, record, removalStep, flash],
+	);
+
 	const patchCell = useCallback(
 		async (cell: JournalCell, patch: CellPatch) => {
 			const back = inversePatch(cell, patch);
@@ -347,15 +384,6 @@ export function JournalView({
 		[run, record, removalStep, flash],
 	);
 
-	/** Focus a cell's root (command mode) and bring it into view. */
-	const focusCell = useCallback((cellId: string | undefined) => {
-		if (!cellId) return;
-		const el = document.getElementById(`cell-${cellId}`);
-		if (!el) return;
-		el.focus({ preventScroll: true });
-		el.scrollIntoView({ block: "nearest" });
-	}, []);
-
 	/** Step the notebook's history; lands on the cell the step touched. */
 	const travel = useCallback(
 		async (direction: "undo" | "redo") => {
@@ -384,6 +412,17 @@ export function JournalView({
 			}
 		},
 		[flash, focusCell, load],
+	);
+
+	/** F / the cards button: draft flashcards from a cell that has text. */
+	const openFlashcards = useCallback(
+		(cellId: string) => {
+			const cell = journalRef.current?.cells.find((c) => c.id === cellId);
+			if (!cell) return;
+			if (flashcardSourceText(cell) === null) flash("The cell is empty — nothing to make flashcards from.", 3000);
+			else setCardsFor(cellId);
+		},
+		[flash],
 	);
 
 	// A fresh notebook is one empty markdown cell: open straight into editing it.
@@ -423,8 +462,8 @@ export function JournalView({
 	//   (in edit mode Mod+L is the cell's inline ask)
 	//   Esc on a focused cell → scroll mode (the container takes focus)
 	//   Tab → the top cell · ↑/↓ → previous / next cell
-	const keysRef = useRef({ cells: [] as string[], editingId: null as string | null, addCell, rateCell, extractCell, deleteCell, travel });
-	keysRef.current = { cells: journal?.cells.map((c) => c.id) ?? [], editingId, addCell, rateCell, extractCell, deleteCell, travel };
+	const keysRef = useRef({ cells: [] as string[], editingId: null as string | null, addCell, rateCell, extractCell, deleteCell, travel, openFlashcards });
+	keysRef.current = { cells: journal?.cells.map((c) => c.id) ?? [], editingId, addCell, rateCell, extractCell, deleteCell, travel, openFlashcards };
 	useEffect(() => {
 		if (!loaded) return;
 		const onKey = (e: KeyboardEvent) => {
@@ -443,6 +482,16 @@ export function JournalView({
 				e.preventDefault();
 				e.stopPropagation();
 			};
+			// Text highlighted in a rendered cell: the inline-ask key asks about
+			// it (instead of adding an agent cell).
+			if (eventMatchesAction(e, "journal-inline") && !isTypingSurface(e)) {
+				const picked = selectedCellText();
+				if (picked && root.contains(picked.cell)) {
+					claim();
+					window.dispatchEvent(new CustomEvent(JOURNAL_ASK_SELECTION_EVENT, { detail: { cellId: picked.cellId, mode: "ask" } }));
+					return;
+				}
+			}
 			const newRole: JournalCellRole | null = eventMatchesAction(e, "journal-new-code")
 				? "code"
 				: eventMatchesAction(e, "journal-new-markdown")
@@ -488,6 +537,11 @@ export function JournalView({
 				if (eventMatchesAction(e, "journal-extract-cell")) {
 					claim();
 					void keysRef.current.extractCell(cellId);
+					return;
+				}
+				if (eventMatchesAction(e, "journal-flashcards")) {
+					claim();
+					keysRef.current.openFlashcards(cellId);
 					return;
 				}
 				if (eventMatchesAction(e, "journal-delete-cell")) {
@@ -699,6 +753,8 @@ export function JournalView({
 								onHistory={(direction) => void travel(direction)}
 								onRun={() => (cell.role === "agent" ? runAgent(cell.id) : runCell(cell.id))}
 								onAsk={(q) => askCell(cell.id, q)}
+								onSaveAside={(q, a) => void saveAside(cell.id, q, a)}
+								onFlashcards={() => openFlashcards(cell.id)}
 								running={running.has(cell.id)}
 								asking={asking[cell.id] ?? null}
 								streaming={streaming[cell.id] ?? null}
@@ -717,6 +773,16 @@ export function JournalView({
 					</>
 				)}
 			</div>
+			<CellFlashcards
+				journalId={journal.id}
+				cellId={cardsFor}
+				onClose={() => {
+					const id = cardsFor;
+					setCardsFor(null);
+					requestAnimationFrame(() => focusCell(id ?? undefined));
+				}}
+				onSaved={(message) => flash(message, 6000)}
+			/>
 		</div>
 	);
 }

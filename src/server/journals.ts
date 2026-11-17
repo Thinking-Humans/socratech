@@ -27,15 +27,20 @@ import {
 } from "../core/journal.ts";
 import { sessionJournalDrafts } from "../core/journal-fill.ts";
 import {
+	FLASHCARD_DRAFT_SYSTEM_PROMPT,
 	INLINE_EXPLAIN_SYSTEM_PROMPT,
 	INLINE_INSERT_SYSTEM_PROMPT,
 	JOURNAL_AGENT_SYSTEM_PROMPT,
 	JOURNAL_ASK_SYSTEM_PROMPT,
 	askAnswerCell,
+	flashcardDraftPrompt,
+	flashcardSourceText,
 	inlineAskPrompt,
 	journalAgentPrompt,
 	journalAskPrompt,
+	parseFlashcardDrafts,
 	runnableLang,
+	type FlashcardDraft,
 	type InlineAskInput,
 } from "../core/journal-code.ts";
 import { UNDERSTANDING_LEVELS, type CellGraphState, type CellUnderstanding, type Journal, type JournalCell } from "../core/contracts/journal.ts";
@@ -389,6 +394,33 @@ export function journalInlineStream(id: string, cellId: string, input: InlineAsk
 	} catch (err) {
 		if (err instanceof NoteError) throw new JournalError(err.message, "invalid");
 		throw err;
+	}
+}
+
+/**
+ * F on a cell: the strong model drafts flashcards from it (the cells around
+ * it as context). Saves nothing — the learner edits the drafts and the
+ * Flashcards plugin stores what they keep.
+ */
+export async function draftCellFlashcards(id: string, cellId: string, signal?: AbortSignal): Promise<FlashcardDraft[]> {
+	const journal = requireJournal(id);
+	const cell = journal.cells.find((c) => c.id === cellId);
+	if (!cell) throw new JournalError(`No cell [${cellId}] in journal [${id}].`, "not_found");
+	if (flashcardSourceText(cell) === null) throw new JournalError("The cell is empty — nothing to make flashcards from.", "invalid");
+	let stream: ReadableStream<Uint8Array>;
+	try {
+		stream = strongTextStream(FLASHCARD_DRAFT_SYSTEM_PROMPT, flashcardDraftPrompt(journal, cellId), "journal-flashcards", signal);
+	} catch (err) {
+		if (err instanceof NoteError) throw new JournalError(err.message, "invalid");
+		throw err;
+	}
+	const reply = await new Response(stream).text();
+	try {
+		return parseFlashcardDrafts(reply);
+	} catch (err) {
+		// A failed model call arrives as "*(failed: …)*" text — pass its reason on.
+		const failed = /\*\(failed: (.+)\)\*\s*$/.exec(reply)?.[1];
+		throw new JournalError(failed ? `The agent failed: ${failed}` : err instanceof Error ? err.message : String(err), "invalid");
 	}
 }
 

@@ -25,6 +25,8 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { HostDialog } from "@/components/host-dialog";
 import { SearchEverything } from "@/components/journal/search-everything";
+import { NotebookSwitcher, useNotebookNav } from "@/components/journal/notebook-switcher";
+import { Scratchpad } from "@/components/scratchpad";
 import { useOptionalInteractionLayers } from "@/components/interaction-layers";
 import { useRouter } from "next/navigation";
 import {
@@ -52,6 +54,9 @@ export function KeyboardShortcuts() {
 	const router = useRouter();
 	const [cheatOpen, setCheatOpen] = useState(false);
 	const [searchOpen, setSearchOpen] = useState(false);
+	const [switcherOpen, setSwitcherOpen] = useState(false);
+	const [scratchOpen, setScratchOpen] = useState(false);
+	const nav = useNotebookNav();
 	const { open: openSettings } = useSettingsDialog();
 	const controller = useOptionalInteractionLayers();
 	const { manager } = usePlugins();
@@ -63,8 +68,11 @@ export function KeyboardShortcuts() {
 		setCheatOpen: (v: boolean) => void;
 		openSettings: () => void;
 		setSearchOpen: (v: boolean) => void;
-	}>({ router, setCheatOpen, openSettings, setSearchOpen });
-	handlersRef.current = { router, setCheatOpen, openSettings, setSearchOpen };
+		setSwitcherOpen: (v: (open: boolean) => boolean) => void;
+		setScratchOpen: (v: (open: boolean) => boolean) => void;
+		openSlot: (n: number) => boolean;
+	}>({ router, setCheatOpen, openSettings, setSearchOpen, setSwitcherOpen, setScratchOpen, openSlot: nav.openSlot });
+	handlersRef.current = { router, setCheatOpen, openSettings, setSearchOpen, setSwitcherOpen, setScratchOpen, openSlot: nav.openSlot };
 
 	useEffect(() => {
 		const onKeyDown = (e: KeyboardEvent) => {
@@ -144,6 +152,16 @@ export function KeyboardShortcuts() {
 					e.preventDefault();
 					handlersRef.current.setSearchOpen(true);
 					break;
+				case "switch-notebook":
+					// Claim Mod+O from the browser's Open File.
+					e.preventDefault();
+					handlersRef.current.setSwitcherOpen((open) => !open);
+					break;
+				case "toggle-scratchpad":
+					// Claim Mod+P from the browser's Print.
+					e.preventDefault();
+					handlersRef.current.setScratchOpen((open) => !open);
+					break;
 				case "toggle-question-thread":
 					// The chat view owns it (only while a question waits); claim the
 					// chord so a browser tab's own ⌘J (Downloads) never fires too.
@@ -157,6 +175,12 @@ export function KeyboardShortcuts() {
 					window.dispatchEvent(new CustomEvent(kbdEventForAction(action)));
 					break;
 				default:
+					if (action.startsWith("notebook-slot-")) {
+						// Alt+N: straight to the pinned notebook (browsers use it for tabs).
+						e.preventDefault();
+						handlersRef.current.openSlot(Number(action.slice("notebook-slot-".length)));
+						break;
+					}
 					if (dispatchFocusedPluginShortcut(action, controller)) break;
 					// Core dictation is a background-page service, not a modal
 					// command. A foreground plugin gets its focused claim above.
@@ -172,6 +196,8 @@ export function KeyboardShortcuts() {
 		<>
 			<CheatSheet open={cheatOpen} onClose={() => setCheatOpen(false)} />
 			<SearchEverything open={searchOpen} onClose={() => setSearchOpen(false)} />
+			<NotebookSwitcher open={switcherOpen} onClose={() => setSwitcherOpen(false)} nav={nav} />
+			<Scratchpad open={scratchOpen} onClose={() => setScratchOpen(false)} />
 		</>
 	);
 }
