@@ -21,6 +21,7 @@ export * from "./journals.ts";
 export * from "./journal-media.ts";
 export * from "./scratchpad.ts";
 export * from "./notebook-learning.ts";
+export * from "./notebook-from-graph.ts";
 // The API gate, for the routes proxy.ts exempts (they enforce it in-handler).
 export { apiRequestRefusal } from "./desktop-access.ts";
 export * from "./publish.ts";

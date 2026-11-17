@@ -4,7 +4,7 @@
  * journal, only the one change. Every mutation returns the fresh journal.
  */
 
-import type { CellPatch, FlashcardDraft, InlineAskInput, UnderstandingCheck, UnderstandingLevel, Journal, JournalCell, JournalCellRole, JournalMetaPatch, JournalSummary, PublishPlan, PublishResult } from "@/src/core";
+import type { CellPatch, FlashcardDraft, InlineAskInput, MarimoRedefinition, UnderstandingCheck, UnderstandingLevel, Journal, JournalCell, JournalCellRole, JournalMetaPatch, JournalSummary, PublishPlan, PublishResult } from "@/src/core";
 
 export type { PublishPlan, PublishResult };
 
@@ -14,6 +14,13 @@ export interface CellRun {
 	ok: boolean;
 	executionCount: number;
 	ms: number;
+}
+
+/** GET /api/journals/[id]/marimo (server: src/server/marimo-check.ts). */
+export interface MarimoCleanReport {
+	checked: boolean;
+	redefinitions: MarimoRedefinition[];
+	unparsable: { cellId: string; error: string }[];
 }
 
 export class JournalApiError extends Error {
@@ -71,6 +78,9 @@ export const journalApi = {
 	byChat: async (chatId: string) => (await call<{ journal: Journal | null }>(`${base}?chatId=${encodeURIComponent(chatId)}`)).journal,
 	get: async (id: string) => (await call<One>(`${base}/${id}`)).journal,
 	create: async (init: { title: string; chatId?: string }) => (await call<One>(base, "POST", init)).journal,
+	/** Launch a notebook from the graph (Teach / Practice) → it + the agent cell to run. */
+	launchFromGraph: async (init: { mode: "teach" | "practice"; topic: string; propositions: { id: string; name: string; statement: string }[] }) =>
+		call<{ journal: Journal; runCellId?: string }>(`${base}/from-graph`, "POST", init),
 	patchMeta: async (id: string, patch: JournalMetaPatch) => (await call<One>(`${base}/${id}`, "PATCH", patch)).journal,
 	remove: async (id: string) => call<{ ok: true }>(`${base}/${id}`, "DELETE"),
 	addCell: async (id: string, init: { role: JournalCellRole; source?: string; lang?: string }, afterId?: string) =>
@@ -83,6 +93,8 @@ export const journalApi = {
 	/** Run a code cell; the journal comes back with the cell's output + run number. */
 	runCell: async (id: string, cellId: string) => call<{ journal: Journal; run: CellRun }>(`${cellUrl(id, cellId)}/run`, "POST"),
 	restartKernel: async (id: string) => call<{ ok: true }>(`${base}/${id}/kernel`, "DELETE"),
+	/** marimo-clean report: Python globals two cells define (marimo refuses those). */
+	marimoCheck: async (id: string) => call<MarimoCleanReport>(`${base}/${id}/marimo`),
 	/** Stream an answer about one cell; the server saves it as an aside when done. */
 	askCell: (id: string, cellId: string, question: string, onText: (soFar: string) => void, signal?: AbortSignal) =>
 		streamText(`${cellUrl(id, cellId)}/ask`, { question }, onText, signal),
@@ -107,9 +119,9 @@ export const journalApi = {
 	/** Rate a cell (null clears); "stuck" returns the prerequisites agent cell to run. */
 	rateCell: async (id: string, cellId: string, level: UnderstandingLevel | null) =>
 		call<{ journal: Journal; prereqCellId?: string }>(`${cellUrl(id, cellId)}/rate`, "POST", { level }),
-	/** Read this cell into the graph now (edited text replaces its earlier contribution). */
-	extractCell: async (id: string, cellId: string) =>
-		call<{ journal: Journal; outcome: string; stats?: { nodes: number; chains?: number } }>(`${cellUrl(id, cellId)}/extract`, "POST"),
+	/** Read the whole notebook into the graph now (an edited notebook replaces its earlier contribution). */
+	extractNotebook: async (id: string) =>
+		call<{ journal: Journal; outcome: string; stats?: { nodes: number; chains?: number } }>(`${base}/${id}/extract`, "POST"),
 	checkQuestion: (id: string, cellId: string, onText: (soFar: string) => void, signal?: AbortSignal) =>
 		streamText(`${cellUrl(id, cellId)}/check`, { phase: "question" }, onText, signal),
 	checkGrade: async (id: string, cellId: string, question: string, answer: string) =>

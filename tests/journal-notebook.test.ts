@@ -20,7 +20,7 @@ const { exportJournal, publishedMediaNames } = await import("../src/core/journal
 const { journalAgentPrompt } = await import("../src/core/journal-code.ts");
 const { searchJournals } = await import("../src/core/journal-search.ts");
 const media = await import("../src/core/journal-media.ts");
-const { journalStore } = await import("../src/store/journals.ts");
+const { notebookStore: journalStore } = await import("../src/store/notebooks.ts");
 const { saveJournalMedia, journalMediaFile } = await import("../src/server/journal-media.ts");
 
 after(() => fs.rmSync(TMP, { recursive: true, force: true }));

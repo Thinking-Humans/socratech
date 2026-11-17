@@ -336,7 +336,7 @@ function createChatGPT({ store, openExternal, fetch: request = globalThis.fetch,
 			const url = new URL(AUTHORIZE);
 			url.search = new URLSearchParams({
 				client_id: selected?.clientId ?? "dynamic_agent_client",
-				...(selected ? {} : { agent_name_hint: "LearnHarness" }),
+				...(selected ? {} : { agent_name_hint: "Socratech" }),
 				ext_agent_host_id: state.hostId,
 				...(selected?.tokens?.idToken ? { id_token_hint: selected.tokens.idToken } : {}),
 				...(selected?.email ? { login_hint: selected.email } : {}),

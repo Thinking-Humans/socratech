@@ -55,7 +55,7 @@ open.
 | Edit the focused cell | Enter |
 | Next / previous cell | ↓ / ↑ |
 | Rate the focused cell: on my own / with help / couldn't, even with help | 1 / 2 / 3 |
-| Read the focused cell into the graph | G |
+| Read the notebook into the graph | G |
 | Make flashcards from the focused cell | F |
 | Delete the focused cell (command mode — Esc, then D) | D |
 | Undo / redo (cell edits, adds, deletes, moves) | Mod+Z / Mod+Shift+Z |

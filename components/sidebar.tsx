@@ -9,7 +9,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { MenuShell } from "@/components/menu-shell";
 import { DeleteSessionDialog } from "@/components/delete-session-dialog";
 import type { ChatDeleteMode, ThemeMode } from "@/src/core";
-import { DumbbellIcon, PanelLeftCloseIcon, PanelLeftOpenIcon, PlusIcon, SearchIcon, SettingsIcon, ShuffleIcon } from "lucide-react";
+import { DumbbellIcon, PanelLeftCloseIcon, PanelLeftOpenIcon, PlusIcon, SearchIcon, SettingsIcon, ShuffleIcon, WaypointsIcon } from "lucide-react";
 import { ActivitySection } from "@/components/activity-dock";
 import { CoverageMenuBlock } from "@/components/extraction-coverage";
 import { LhMark, SocratechWordmark } from "@/components/lh-mark";
@@ -887,6 +887,26 @@ function SessionsSidebar() {
 					    learner opted out (no ambient signal, user decision). */}
 					{/* Journals (learn-in-public, owner 2026-11-15): below the session
 					    list, above the background agents. */}
+					{/* The learning graph (owner, 2026-11-15): notebooks feed it and
+					    launch from it — its door sits right above them. */}
+					{JOURNAL_ONLY && (
+						<div className="px-3 pt-2">
+							<Hint label="Graph" action="jump-graph" side="right">
+								<Link
+									href="/graph"
+									data-testid="sidebar-graph"
+									aria-current={pathname === "/graph" ? "page" : undefined}
+									className={cn(
+										"flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs uppercase tracking-wider text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
+										pathname === "/graph" && "bg-accent text-foreground",
+									)}
+								>
+									<WaypointsIcon className="size-3.5" />
+									Graph
+								</Link>
+							</Hint>
+						</div>
+					)}
 					<JournalsSection fill={JOURNAL_ONLY} />
 
 					{!JOURNAL_ONLY && <ActivitySection />}

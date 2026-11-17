@@ -93,6 +93,9 @@ export interface Journal {
 	tags: string[];
 	cells: JournalCell[];
 	publications: JournalPublication[];
+	/** The notebook's contribution to the graph (owner, 2026-11-15: the
+	 *  notebook — not the cell — is the graph's unit). Absent = never read. */
+	graph?: CellGraphState;
 	createdAt: string;
 	updatedAt: string;
 }

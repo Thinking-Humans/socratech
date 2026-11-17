@@ -19,6 +19,8 @@ import { OPENING_PROMPT_FAILURE } from "@/components/opening-prompt";
 import { PathInput } from "@/components/path-input";
 import { AttachFilesButton } from "@/components/attach-files-button";
 import { SessionStarter } from "@/components/start-session";
+import { JOURNAL_ONLY } from "@/components/journal/journal-only";
+import { journalApi } from "@/components/journal/journal-api";
 import type { TurnUsage } from "@/src/core";
 
 /** The composer's prompt per mode. */
@@ -156,6 +158,18 @@ export function Home({
 		setBusy(true);
 		setStartError(false);
 		try {
+			// Notebooks are the unit of execution (owner, 2026-11-15): in the
+			// notebook app, Teach / Practice open a NEW NOTEBOOK seeded from the
+			// topic + picks (core/notebook-from-graph.ts) instead of a session.
+			if (JOURNAL_ONLY) {
+				const { journal, runCellId } = await journalApi.launchFromGraph({
+					mode: mode === "practice" ? "practice" : "teach",
+					topic: t,
+					propositions: practiceProps,
+				});
+				router.push(`/notebook/${journal.id}${runCellId ? `?run=${encodeURIComponent(runCellId)}` : ""}`);
+				return;
+			}
 			// The map context (owner, 2026-10-04): picks in EITHER mode ride
 			// the CREATION as graphContext — the server writes a
 			// graph-context marker as message[0] (a separate custom message
@@ -309,7 +323,7 @@ export function Home({
 						turns={[] as TurnUsage[]}
 						leadingSlot={
 							<div className="flex items-center gap-0.5 rounded-md border border-border/60 bg-background p-0.5" data-testid="home-mode-switch">
-								{(["teach", "practice", "improvise"] as const).map((m) => (
+								{(JOURNAL_ONLY ? (["teach", "practice"] as const) : (["teach", "practice", "improvise"] as const)).map((m) => (
 									<button
 										key={m}
 										type="button"

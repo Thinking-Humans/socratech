@@ -385,6 +385,10 @@ export interface GraphSnapshot {
     chains: GraphChain[];
     sessions: Record<string, string>;
     fileSources: Record<string, string>;
+    notebookSources?: Record<string, {
+        href: string;
+        title: string;
+    }>;
     nodeSessions: Record<string, string[]>;
     clusters: Cluster[];
     positions?: Record<string, Position>;
@@ -403,6 +407,7 @@ export interface GraphSnapshot {
 - [chains](#graphsnapshot-chains)
 - [sessions](#graphsnapshot-sessions)
 - [fileSources](#graphsnapshot-filesources)
+- [notebookSources](#graphsnapshot-notebooksources)
 - [nodeSessions](#graphsnapshot-nodesessions)
 - [clusters](#graphsnapshot-clusters)
 - [positions](#graphsnapshot-positions)
@@ -484,6 +489,19 @@ the detail card shows the path as plain text, not a link.
 
 ```ts
 fileSources: Record<string, string>;
+```
+
+### GraphSnapshot notebookSources
+
+srcId → the notebook behind a `notebook://` source (notebooks are
+the graph's unit): a deep link + its title. Absent when
+the notebook was deleted — the fileSources entry still stands.
+
+```ts
+notebookSources?: Record<string, {
+    href: string;
+    title: string;
+}>;
 ```
 
 ### GraphSnapshot nodeSessions

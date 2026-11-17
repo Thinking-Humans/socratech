@@ -1,0 +1,114 @@
+{
+	"format": "socratech-notebook",
+	"version": 1,
+	"id": "jrnl_fixture",
+	"title": "Marimo fixture",
+	"slug": "marimo-fixture",
+	"tags": [
+		"fixture"
+	],
+	"publications": [],
+	"createdAt": "2026-11-15T10:00:00.000Z",
+	"updatedAt": "2026-11-15T10:00:00.000Z",
+	"cells": [
+		{
+			"id": "cell_f00000000001",
+			"role": "reflection",
+			"publish": true,
+			"createdAt": "2026-11-15T10:00:00.000Z",
+			"updatedAt": "2026-11-15T10:00:00.000Z",
+			"sourceHash": "1ad7a26b07a378"
+		},
+		{
+			"id": "cell_f00000000002",
+			"role": "exercise",
+			"publish": true,
+			"createdAt": "2026-11-15T10:00:00.000Z",
+			"updatedAt": "2026-11-15T10:00:00.000Z",
+			"sourceHash": "01c76b76c3dfc9"
+		},
+		{
+			"id": "cell_f00000000003",
+			"role": "code",
+			"publish": true,
+			"createdAt": "2026-11-15T10:00:00.000Z",
+			"updatedAt": "2026-11-15T10:00:00.000Z",
+			"lang": "python",
+			"output": "",
+			"executionCount": 1,
+			"sourceHash": "0350b805ac8be7"
+		},
+		{
+			"id": "cell_f00000000004",
+			"role": "code",
+			"publish": true,
+			"createdAt": "2026-11-15T10:00:00.000Z",
+			"updatedAt": "2026-11-15T10:00:00.000Z",
+			"lang": "python",
+			"executionCount": 2,
+			"sourceHash": "0609da92da655b"
+		},
+		{
+			"id": "cell_f00000000005",
+			"role": "code",
+			"publish": true,
+			"createdAt": "2026-11-15T10:00:00.000Z",
+			"updatedAt": "2026-11-15T10:00:00.000Z",
+			"lang": "python",
+			"output": "10 [...]\n",
+			"executionCount": 3,
+			"sourceHash": "12707a1845c3fc"
+		},
+		{
+			"id": "cell_f00000000006",
+			"role": "code",
+			"publish": true,
+			"createdAt": "2026-11-15T10:00:00.000Z",
+			"updatedAt": "2026-11-15T10:00:00.000Z",
+			"lang": "cpp",
+			"output": "```\n",
+			"executionCount": 4,
+			"sourceHash": "16d3b2d691d540"
+		},
+		{
+			"id": "cell_f00000000007",
+			"role": "agent",
+			"publish": false,
+			"createdAt": "2026-11-15T10:00:00.000Z",
+			"updatedAt": "2026-11-15T10:00:00.000Z",
+			"sourceHash": "186bc92f2f1113"
+		},
+		{
+			"id": "cell_f00000000008",
+			"role": "agent",
+			"publish": false,
+			"createdAt": "2026-11-15T10:00:00.000Z",
+			"updatedAt": "2026-11-15T10:00:00.000Z",
+			"sourceHash": "1e9e66b8ea96e6"
+		},
+		{
+			"id": "cell_f00000000009",
+			"role": "aside",
+			"publish": false,
+			"createdAt": "2026-11-15T10:00:00.000Z",
+			"updatedAt": "2026-11-15T10:00:00.000Z",
+			"sourceHash": "1a93e40de60d5f"
+		},
+		{
+			"id": "cell_f0000000000a",
+			"role": "attempt",
+			"publish": true,
+			"createdAt": "2026-11-15T10:00:00.000Z",
+			"updatedAt": "2026-11-15T10:00:00.000Z",
+			"sourceHash": "176f8fc26e83d7"
+		},
+		{
+			"id": "cell_f0000000000b",
+			"role": "verdict",
+			"publish": true,
+			"createdAt": "2026-11-15T10:00:00.000Z",
+			"updatedAt": "2026-11-15T10:00:00.000Z",
+			"sourceHash": "10e1af89619bf2"
+		}
+	]
+}

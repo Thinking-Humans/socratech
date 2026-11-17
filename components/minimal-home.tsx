@@ -18,6 +18,7 @@
  * The practice pick flow mirrors GraphView's contract verbatim (home
  * lifts the pick set; the chip opens the overlay in select mode).
  */
+import { GRAPH_EMPTY_HINT } from "@/components/journal/journal-only";
 import { useCallback, useEffect, useState } from "react";
 import { ListTreeIcon } from "lucide-react";
 import { ChainTableOverlay } from "@/components/chain-table.tsx";
@@ -86,7 +87,7 @@ export function KnowledgeSummary({
 			</p>
 			{empty && (
 				<div className="pt-2 font-ui text-xs text-muted-foreground/70">
-					<p>Start a session to begin learning.</p>
+					<p>{GRAPH_EMPTY_HINT}</p>
 					<p className="mt-1">Attach your material with the paperclip or drag and drop.</p>
 				</div>
 			)}

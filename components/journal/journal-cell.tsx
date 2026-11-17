@@ -35,6 +35,7 @@ import { journalApi } from "@/components/journal/journal-api";
 import { InlineAskBox, type InlineAskRequest } from "@/components/journal/inline-ask";
 import type { InlineAskMode } from "@/src/core";
 import { CellLearningBar } from "@/components/journal/cell-learning";
+import { MarimoWarning } from "@/components/journal/marimo-warning";
 import { bindingForAction, eventBinding } from "@/src/core";
 import { MessageResponse } from "@/components/ai-elements/message";
 import { cn } from "@/lib/utils";
@@ -175,8 +176,6 @@ export interface JournalCellProps {
 	streaming?: string | null;
 	/** The learning bar: rating, cross-check, graph. */
 	onRate: (level: import("@/src/core").UnderstandingLevel | null) => void;
-	onExtract: () => void;
-	extracting: boolean;
 	onJournal: (j: import("@/src/core").Journal) => void;
 	/** The notebook's undo/redo — reached from edit mode once the text box's own history is empty. */
 	onHistory: (direction: "undo" | "redo") => void;
@@ -217,8 +216,6 @@ export function JournalCellView({
 	asking,
 	streaming,
 	onRate,
-	onExtract,
-	extracting,
 	onJournal,
 	onHistory,
 }: JournalCellProps) {
@@ -726,6 +723,7 @@ export function JournalCellView({
 					<MessageResponse>{renderedOutput}</MessageResponse>
 				</div>
 			)}
+			<MarimoWarning journalId={journalId} cell={cell} />
 			{asking && (
 				<div className="mt-2 rounded-md border border-dashed border-primary/40 px-3 py-2 text-sm" data-testid="journal-cell-asking">
 					<div className="mb-1 flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-muted-foreground">
@@ -764,7 +762,7 @@ export function JournalCellView({
 					document.body,
 				)}
 			{!editing && (
-				<CellLearningBar journalId={journalId} cell={cell} onRate={onRate} onExtract={onExtract} extracting={extracting} onJournal={onJournal} />
+				<CellLearningBar journalId={journalId} cell={cell} onRate={onRate} onJournal={onJournal} />
 			)}
 		</div>
 	);

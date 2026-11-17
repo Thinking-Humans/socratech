@@ -154,7 +154,7 @@ export const KEYBOARD_ACTIONS: readonly KeyActionDef[] = [
 	{ id: "journal-rate-own", label: "Rate the focused cell: did it on my own", scope: "journal", binding: "1", surfaceOwned: true },
 	{ id: "journal-rate-helped", label: "Rate: did it with help", scope: "journal", binding: "2", surfaceOwned: true },
 	{ id: "journal-rate-stuck", label: "Rate: couldn't understand, even with help (explains prerequisites)", scope: "journal", binding: "3", surfaceOwned: true },
-	{ id: "journal-extract-cell", label: "Read the focused cell into the graph", scope: "journal", binding: "g", surfaceOwned: true },
+	{ id: "journal-extract-cell", label: "Read the notebook into the graph", scope: "journal", binding: "g", surfaceOwned: true },
 	// Flashcards from the focused cell (owner, 2026-11-17): the agent drafts,
 	// the learner edits and picks the deck.
 	{ id: "journal-flashcards", label: "Make flashcards from the focused cell", scope: "journal", binding: "f", surfaceOwned: true },

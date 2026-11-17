@@ -36,7 +36,7 @@ import type {
 import { exportJournal, publishedCells, publishedMediaNames, type JournalBundle } from "../core/journal-export.ts";
 import { MEDIA_DIR } from "../core/journal-media.ts";
 import { journalMediaFile } from "./journal-media.ts";
-import { extractPublishedCells } from "./notebook-learning.ts";
+import { extractPublishedNotebook } from "./notebook-learning.ts";
 import { JournalError } from "../core/journal.ts";
 import { getGraph } from "../core/graph.ts";
 import { stores } from "./stores.ts";
@@ -44,7 +44,7 @@ import { stores } from "./stores.ts";
 const run = promisify(execFile);
 
 /** Files the exporter can produce — the only names publish ever removes. */
-const BUNDLE_FILES = ["index.md", "notebook.ipynb"] as const;
+const BUNDLE_FILES = ["index.md", "notebook.ipynb", "notebook.py"] as const;
 
 /** Settings → concrete target, or null when publishing is not set up. */
 export function resolvePublishTarget(): PublishTarget | null {
@@ -279,7 +279,7 @@ export async function publishJournal(journalId: string, confirmDir: string): Pro
 
 		// Every published cell that is new or edited since its last extraction
 		// (notebook-learning.ts: one graph source per cell; edits replace).
-		const graphImport = extractPublishedCells(journal);
+		const graphImport = extractPublishedNotebook(journal);
 		return { journal, dir, changed: true, ...(commit ? { commit } : {}), pushed, ...(plan.url ? { url: plan.url } : {}), graphImport };
 	} finally {
 		inFlight.delete(journalId);

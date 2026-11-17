@@ -3,19 +3,17 @@
 /**
  * A cell's learning bar (owner, 2026-11-15): the learner's rating (did it
  * on my own / with help / couldn't, even with help), the agent's
- * cross-check of that rating, and the cell's place in the graph
- * (extracted only when asked, or on publish).
+ * cross-check of that rating. The graph is per NOTEBOOK (owner,
+ * 2026-11-15), so "Add to graph" lives in the notebook header.
  */
 
 import { useEffect, useRef, useState } from "react";
-import { CheckCircle2Icon, LoaderCircleIcon, NetworkIcon, ShieldQuestionIcon } from "lucide-react";
+import { LoaderCircleIcon, ShieldQuestionIcon } from "lucide-react";
 import {
 	RATEABLE_ROLES,
 	UNDERSTANDING_LABEL,
 	UNDERSTANDING_LEVELS,
-	cellGraphStatus,
 	checkDisagrees,
-	extractableText,
 	ratingIsStale,
 	type JournalCell,
 	type UnderstandingLevel,
@@ -36,28 +34,22 @@ export function CellLearningBar({
 	journalId,
 	cell,
 	onRate,
-	onExtract,
-	extracting,
 	onJournal,
 }: {
 	journalId: string;
 	cell: JournalCell;
 	onRate: (level: UnderstandingLevel | null) => void;
-	onExtract: () => void;
-	extracting: boolean;
 	/** Adopt a journal the check returned. */
 	onJournal: (j: import("@/src/core").Journal) => void;
 }) {
 	const [checkOpen, setCheckOpen] = useState(false);
 	const rateable = RATEABLE_ROLES.includes(cell.role);
-	const extractable = extractableText(cell) !== null || cell.graph !== undefined;
-	if (!rateable && !extractable) return null;
+	if (!rateable) return null;
 
 	const u = cell.understanding;
 	const stale = ratingIsStale(cell);
-	const graph = cellGraphStatus(cell);
 	const mismatch = u?.check && checkDisagrees(u.level, u.check.verdict);
-	const quiet = !u && graph === "none" && !checkOpen;
+	const quiet = !u && !checkOpen;
 
 	return (
 		<div
@@ -66,8 +58,7 @@ export function CellLearningBar({
 			onClick={(e) => e.stopPropagation()}
 		>
 			<div className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
-				{rateable && (
-					<>
+				<>
 						{UNDERSTANDING_LEVELS.map((level, i) => (
 							<button
 								key={level}
@@ -103,38 +94,7 @@ export function CellLearningBar({
 							</button>
 						)}
 						{mismatch && <span className="text-error">the check disagrees with your rating</span>}
-					</>
-				)}
-				<span className="flex-1" />
-				{extractable && (
-					<button
-						type="button"
-						data-testid="cell-extract"
-						disabled={extracting}
-						onClick={onExtract}
-						title={
-							graph === "current"
-								? "This text is in the graph"
-								: graph === "stale"
-									? "Edited since it was read into the graph — re-extract to replace it"
-									: "Read this cell into the knowledge graph (g)"
-						}
-						className={cn(
-							"flex items-center gap-1 rounded px-1.5 py-0.5 transition-colors hover:bg-accent hover:text-foreground disabled:opacity-60",
-							graph === "current" && "text-primary",
-							graph === "stale" && "text-warning",
-						)}
-					>
-						{extracting ? <LoaderCircleIcon className="size-3 animate-spin" /> : graph === "current" ? <CheckCircle2Icon className="size-3" /> : <NetworkIcon className="size-3" />}
-						{extracting
-							? "extracting…"
-							: graph === "current"
-								? `in graph · ${cell.graph!.nodes} new idea${cell.graph!.nodes === 1 ? "" : "s"}`
-								: graph === "stale"
-									? "changed — re-extract"
-									: "Add to graph"}
-					</button>
-				)}
+				</>
 			</div>
 			{checkOpen && u && <CheckBox journalId={journalId} cell={cell} onJournal={onJournal} onClose={() => setCheckOpen(false)} />}
 		</div>

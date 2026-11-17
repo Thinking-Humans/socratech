@@ -9,7 +9,7 @@
 #   - signed + notarized since 2026-10-08 (Developer ID Application cert in
 #     the login keychain; notary credentials in the LH_NOTARY keychain
 #     profile; the profile + team env vars are baked into desktop:dist).
-appId: com.learnharness.LearnHarness
+appId: com.thinkinghumans.Socratech
 productName: Socratech
 directories:
   output: dist

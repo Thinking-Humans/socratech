@@ -63,12 +63,13 @@
  * camera never moves.
  */
 
+import { GRAPH_EMPTY_HINT } from "@/components/journal/journal-only";
 import { useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { NotesImportControl, NotesImportErrors, NotesImportNotices, useNotesImport } from "@/components/notes-import.tsx";
 import { PluginGraphActions } from "@/components/plugin-chrome";
 import { SettingsSlider as SettingSlider } from "@/components/settings/controls";
 import Link from "next/link";
-import { FileTextIcon, ListTreeIcon, Loader2Icon, SearchIcon, SettingsIcon, WaypointsIcon } from "lucide-react";
+import { FileTextIcon, ListTreeIcon, Loader2Icon, NotebookPenIcon, SearchIcon, SettingsIcon, WaypointsIcon } from "lucide-react";
 import { incrementalLayout, propositionSessionHref, type GraphCostSummary, type GraphNode, type GraphSnapshot } from "@/src/core";
 import { planCostLabel } from "@/components/usage-format";
 import { CLUSTER_LIGHTNESS, GraphCanvasRenderer, type GraphRenderSettings } from "./graph-canvas.ts";
@@ -1476,7 +1477,7 @@ export function GraphView({
 						<WaypointsIcon className="size-10 opacity-40" strokeWidth={1.25} />
 						<div className="text-lg font-medium text-foreground">Knowledge graph</div>
 						<div className="max-w-sm text-sm">
-							<p>Start a session to begin learning.</p>
+							<p>{GRAPH_EMPTY_HINT}</p>
 							<p className="mt-1 text-xs">Attach your material with the paperclip or drag and drop.</p>
 						</div>
 					</div>
@@ -1631,8 +1632,24 @@ export function GraphView({
 					<NodeCardText name={selected.node.name} statement={selected.node.statement} />
 					{selected.sourceIds.length > 0 ? (
 						<div className="mt-3 flex flex-col gap-1">
-							<div className="text-xs text-muted-foreground">Sessions</div>
+							<div className="text-xs text-muted-foreground">Sources</div>
 							{selected.sourceIds.map((sourceId) => {
+								// A notebook (the graph's unit, owner 2026-11-15): opens it.
+								const notebook = snapshot?.notebookSources?.[sourceId];
+								if (notebook) {
+									return (
+										<div key={sourceId} className="flex items-center gap-1.5">
+											<NotebookPenIcon className="size-3.5 shrink-0 text-muted-foreground" />
+											<Link
+												href={notebook.href}
+												data-testid="graph-source-notebook"
+												className="min-w-0 flex-1 truncate rounded-md px-2 py-1.5 text-sm text-foreground transition-colors hover:bg-accent"
+											>
+												{notebook.title}
+											</Link>
+										</div>
+									);
+								}
 								// An imported-notes file: a STATIC entry — the path,
 								// plain text, never a link (no session to open).
 								if (snapshot?.fileSources?.[sourceId] !== undefined) {
@@ -1660,7 +1677,7 @@ export function GraphView({
 							})}
 						</div>
 					) : (
-						<div className="mt-3 text-xs text-muted-foreground">No sessions recorded.</div>
+						<div className="mt-3 text-xs text-muted-foreground">No sources recorded.</div>
 					)}
 				</div>
 			)}

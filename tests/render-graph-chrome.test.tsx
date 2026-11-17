@@ -12,6 +12,7 @@ import React from "react";
 (globalThis as Record<string, unknown>).React = React;
 
 import assert from "node:assert/strict";
+import { GRAPH_EMPTY_HINT } from "../components/journal/journal-only.ts";
 import { describe, it } from "node:test";
 import { createElement } from "react";
 import { parseHTML } from "linkedom";
@@ -52,7 +53,7 @@ describe("GraphChromeRow — the empty-graph ruling (owner, 2026-09-25)", () => 
 
 	it("empty graph uses the same session-first lead and secondary material guidance as home", () => {
 		const html = renderToStaticMarkup(createElement(ServerEventsProvider, { children: createElement(GraphView, {}) }));
-		assert.ok(html.includes("<p>Start a session to begin learning.</p>"));
+		assert.ok(html.includes(`<p>${GRAPH_EMPTY_HINT}</p>`));
 		assert.ok(html.includes("Attach your material with the paperclip or drag and drop.</p>"));
 		assert.ok(!html.includes("import notes to build"));
 	});

@@ -1,7 +1,7 @@
 /**
  * Learn-in-public journal (docs/learn-in-public.md, 2026-11-15): pure ops
  * (core/journal.ts), the bundle exporter (core/journal-export.ts), and the
- * fs store (store/journals.ts) under an isolated LH_DATA_DIR.
+ * fs store (store/notebooks.ts — marimo .py + sidecar) under an isolated LH_DATA_DIR.
  */
 
 import assert from "node:assert/strict";
@@ -27,7 +27,7 @@ const {
 	upsertOriginCell,
 } = await import("../src/core/journal.ts");
 const { exportJournal, renderJournalMarkdown, bundleTags } = await import("../src/core/journal-export.ts");
-const { journalStore } = await import("../src/store/journals.ts");
+const { notebookStore: journalStore } = await import("../src/store/notebooks.ts");
 const { subscribe } = await import("../src/core/events.ts");
 type ServerEvent<K extends import("../src/core/events.ts").ServerEventType> = import("../src/core/events.ts").ServerEvent<K>;
 
@@ -142,9 +142,12 @@ describe("journal export", () => {
 		assert.match(md, /^---\ntitle: "Why \\"spectral\\"\? #1: a note"\ndate: 2026-11-15T09:00:00\+05:30\n/);
 	});
 
-	it("notebook bundle: front-matter-only index.md + tagged ipynb", () => {
+	it("notebook bundle: front-matter-only index.md + tagged ipynb + marimo .py of the published cells", () => {
 		const b = exportJournal(sample(), { date: "2026-11-15", format: "notebook" });
-		assert.deepEqual(Object.keys(b.files).sort(), ["index.md", "notebook.ipynb"]);
+		assert.deepEqual(Object.keys(b.files).sort(), ["index.md", "notebook.ipynb", "notebook.py"]);
+		const marimo = b.files["notebook.py"]!;
+		assert.match(marimo, /app = marimo\.App\(\)/);
+		for (const c of sample().cells) assert.equal(marimo.includes(`def ${c.id}(`), c.publish && c.source.trim() !== "", c.id);
 		assert.match(b.files["index.md"]!, /---\n$/);
 		const nb = JSON.parse(b.files["notebook.ipynb"]!);
 		assert.equal(nb.nbformat, 4);
@@ -197,7 +200,7 @@ describe("journal store", () => {
 			assert.equal(journalStore.getJournal("jrnl_z"), null);
 			assert.equal(journalStore.getJournal("../etc"), null);
 			assert.deepEqual(seen, ["jrnl_a", "jrnl_z", "jrnl_a", "jrnl_z"]);
-			assert.deepEqual(fs.readdirSync(path.join(TMP_DATA, "journals")).sort(), ["jrnl_a.json"]);
+			assert.deepEqual(fs.readdirSync(path.join(TMP_DATA, "notebooks")).sort(), ["jrnl_a.py", "jrnl_a.socratech.json"]);
 		} finally {
 			off();
 		}
