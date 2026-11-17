@@ -166,7 +166,7 @@ describe("product version vs plugin compatibility (Socratech 0.2)", () => {
 		assert.match(pkg.pluginHostVersion, /^\d+\.\d+\.\d+$/);
 		const core = JSON.parse(fs.readFileSync(path.join(root, "core-plugins.json"), "utf-8")) as string[];
 		for (const id of core) {
-			const manifest = JSON.parse(fs.readFileSync(path.join(root, "core-plugins", id, "manifest.json"), "utf-8"));
+			const manifest = JSON.parse(fs.readFileSync(path.join(root, "plugins", id, "manifest.json"), "utf-8"));
 			assert.doesNotThrow(() => parsePluginManifest(manifest, id, pkg.pluginHostVersion), id);
 		}
 	});
