@@ -51,7 +51,9 @@ function runtime(): Runtime {
 	});
 	const installationErrors: Record<string, string> = Object.create(null);
 	const host = createPluginHost({
-		directory: pluginDirectory, core, appVersion: packageJson.version, installationErrors,
+		directory: pluginDirectory, core, // Plugins are checked against the Learn Harness API level this fork
+		// tracks, not Socratech's own (lower) product version.
+		appVersion: packageJson.pluginHostVersion, installationErrors,
 		// The process-global runtime owns one admission slot across all plugins
 		// and every separately compiled Next route module.
 		convertDocument: createPluginDocumentConverter().convert,

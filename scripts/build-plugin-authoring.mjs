@@ -135,7 +135,7 @@ export function buildPluginAuthoring({ root = path.resolve(import.meta.dirname, 
 		const reference = spawnSync(process.execPath, [sourcePath(root, path.join(root, "scripts", "build-plugin-api-reference.mjs"), "file"), path.join(stage, "types"), path.join(stage, "docs", "plugin-api")], { cwd: root, stdio: "inherit" });
 		if (reference.error || reference.status !== 0) throw Error(`Authoring API reference generation failed: ${reference.error ?? reference.status}`);
 		const sdk = JSON.parse(fs.readFileSync(sourcePath(stage, path.join(stage, "types", "package.json"), "file"), "utf8"));
-		const metadata = { appVersion: app.version, pluginApiVersion: 1, sdkVersion: sdk.version };
+		const metadata = { appVersion: app.pluginHostVersion ?? app.version, pluginApiVersion: 1, sdkVersion: sdk.version };
 		fs.writeFileSync(path.join(stage, "bundle.json"), JSON.stringify(metadata, null, "\t") + "\n");
 		const entries = files(stage).map(entry => ({ ...entry, name: "learnharness-plugins/" + entry.name }));
 		const archive = createAuthoringZip(entries);

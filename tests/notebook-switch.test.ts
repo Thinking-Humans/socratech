@@ -157,3 +157,17 @@ describe("cell flashcards", () => {
 		for (const reply of ["", "no json here", "[]", "[{]", '{"name":"x"}', "*(failed: rate limit)*"]) assert.throws(() => parseFlashcardDrafts(reply), /did not return any flashcards/, reply);
 	});
 });
+
+describe("product version vs plugin compatibility (Socratech 0.2)", () => {
+	it("every bundled plugin is admitted at package.json's pluginHostVersion, whatever the product version", async () => {
+		const { parsePluginManifest } = await import("../src/core/plugins.ts");
+		const root = path.resolve(import.meta.dirname, "..");
+		const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf-8")) as { version: string; pluginHostVersion: string };
+		assert.match(pkg.pluginHostVersion, /^\d+\.\d+\.\d+$/);
+		const core = JSON.parse(fs.readFileSync(path.join(root, "core-plugins.json"), "utf-8")) as string[];
+		for (const id of core) {
+			const manifest = JSON.parse(fs.readFileSync(path.join(root, "core-plugins", id, "manifest.json"), "utf-8"));
+			assert.doesNotThrow(() => parsePluginManifest(manifest, id, pkg.pluginHostVersion), id);
+		}
+	});
+});
