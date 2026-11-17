@@ -135,7 +135,10 @@ jobs:
       - run: node scripts/smoke-provider-runtime.mjs
       - run: node scripts/build-server.mjs
       - run: node scripts/smoke-server.mjs --electron
-      - name: Validate macOS release secrets
+      # All five secrets present → signed + notarized build. Otherwise (this
+      # fork has no Apple Developer ID yet) → unsigned build, with a warning.
+      - name: Check macOS release secrets
+        id: macsign
         if: github.event_name == 'push' && runner.os == 'macOS'
         env:
           CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
@@ -144,14 +147,27 @@ jobs:
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
+          missing=()
           for name in CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
-            if [[ -z "${!name}" ]]; then
-              echo "::error::Missing signing/notarization secret: $name"
-              exit 1
-            fi
+            [[ -z "${!name}" ]] && missing+=("$name")
           done
+          if (( ${#missing[@]} == 0 )); then
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+          elif (( ${#missing[@]} == 5 )); then
+            echo "::warning::No Apple signing secrets; macOS build is UNSIGNED and not notarized (Gatekeeper will warn, auto-update disabled on mac)."
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::Partial signing secrets; missing: ${missing[*]}"
+            exit 1
+          fi
+      - name: Unsigned macOS release → draft
+        if: github.event_name == 'push' && runner.os == 'macOS' && steps.macsign.outputs.signed == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: npx electron-builder ${{ matrix.builder_args }} --publish always -c.mac.notarize=false
       - name: Signed and notarized macOS release → draft
-        if: github.event_name == 'push' && runner.os == 'macOS'
+        if: github.event_name == 'push' && runner.os == 'macOS' && steps.macsign.outputs.signed == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
