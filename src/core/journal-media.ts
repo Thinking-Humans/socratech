@@ -12,11 +12,15 @@ export const MAX_MEDIA_BYTES = 500 * 1024 * 1024;
 
 const IMAGE_EXT = ["png", "jpg", "jpeg", "gif", "webp", "svg", "avif"];
 const VIDEO_EXT = ["mp4", "webm", "mov", "m4v", "ogv"];
+/** Generated interactive visuals (V on a cell): self-contained HTML, drawn in
+ *  a sandboxed iframe — never uploaded, so not in isMediaName / MEDIA_ACCEPT. */
+const VISUAL_EXT = ["html"];
 
 const ext = (name: string) => (/\.([a-z0-9]+)$/i.exec(name)?.[1] ?? "").toLowerCase();
 export const isImageName = (name: string) => IMAGE_EXT.includes(ext(name));
 export const isVideoName = (name: string) => VIDEO_EXT.includes(ext(name));
 export const isMediaName = (name: string) => isImageName(name) || isVideoName(name);
+export const isVisualName = (name: string) => VISUAL_EXT.includes(ext(name));
 
 export const MEDIA_ACCEPT = [...IMAGE_EXT, ...VIDEO_EXT].map((e) => `.${e}`).join(",");
 
@@ -33,6 +37,7 @@ const CONTENT_TYPES: Record<string, string> = {
 	webm: "video/webm",
 	mov: "video/quicktime",
 	ogv: "video/ogg",
+	html: "text/html; charset=utf-8",
 };
 export const mediaContentType = (name: string) => CONTENT_TYPES[ext(name)] ?? "application/octet-stream";
 
@@ -50,7 +55,7 @@ export function mediaFileName(original: string, tag: string): string {
 }
 
 /** A safe stored name (no paths, a known media extension). */
-export const isSafeMediaName = (name: string) => /^[a-z0-9][a-z0-9-]*\.[a-z0-9]+$/.test(name) && isMediaName(name);
+export const isSafeMediaName = (name: string) => /^[a-z0-9][a-z0-9-]*\.[a-z0-9]+$/.test(name) && (isMediaName(name) || isVisualName(name));
 
 /** The markdown a cell gets for an uploaded file. */
 export function mediaMarkdown(name: string, alt = ""): string {
@@ -67,10 +72,10 @@ export function mediaRefs(text: string): string[] {
 /** A whole-line embed of this journal's media → alt, name, kind. The app
  *  draws these itself (same-origin files only); markdown rendering keeps
  *  blocking images, so model output can never load a remote one. */
-export function mediaEmbedLine(line: string): { alt: string; name: string; kind: "image" | "video" } | null {
+export function mediaEmbedLine(line: string): { alt: string; name: string; kind: "image" | "video" | "visual" } | null {
 	const m = /^\s*!\[([^\]]*)\]\(media\/([a-z0-9][a-z0-9-]*\.[a-z0-9]+)\)\s*$/.exec(line);
 	if (!m || !isSafeMediaName(m[2]!)) return null;
-	return { alt: m[1]!, name: m[2]!, kind: isVideoName(m[2]!) ? "video" : "image" };
+	return { alt: m[1]!, name: m[2]!, kind: isVideoName(m[2]!) ? "video" : isVisualName(m[2]!) ? "visual" : "image" };
 }
 
 /** A whole-line video embed (the exporter turns these into <video> tags). */
@@ -82,11 +87,17 @@ export function videoEmbedLine(line: string): { alt: string; name: string } | nu
 /** The app's URL for a stored media file. */
 export const journalMediaUrl = (journalId: string, name: string) => `/api/journals/${encodeURIComponent(journalId)}/media/${name}`;
 
-/** Published form: video embeds become `<video>` tags; images stay markdown. */
+/** Published form: video embeds become `<video>` tags, visuals sandboxed
+ *  `<iframe>`s; images stay markdown. */
 export function publishedMediaMarkdown(text: string): string {
 	return text
 		.split("\n")
 		.map((line) => {
+			const e = mediaEmbedLine(line);
+			if (e?.kind === "visual") {
+				const title = e.alt ? ` title="${e.alt.replace(/"/g, "&quot;")}"` : "";
+				return `<iframe src="${MEDIA_DIR}/${e.name}" sandbox="allow-scripts" loading="lazy"${title} style="width:100%;height:36rem;border:0;border-radius:8px"></iframe>`;
+			}
 			const v = videoEmbedLine(line);
 			if (!v) return line;
 			const label = v.alt ? ` aria-label="${v.alt.replace(/"/g, "&quot;")}"` : "";

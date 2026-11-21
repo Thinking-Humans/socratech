@@ -115,13 +115,6 @@ export function BrainSection() {
 						</div>
 					</SettingsRow>
 				))}
-				{!status?.vaults.some((v) => v.name === "notes") && (
-					<SettingsRow label="This app's notes" hint="Re-indexes automatically as you write.">
-						<button type="button" className={btn} disabled={busy} onClick={() => void index()}>
-							Index notes
-						</button>
-					</SettingsRow>
-				)}
 				<SettingsRow label="Import Obsidian vault" hint="Absolute folder path. Wikilinks, tags and headings are kept; .obsidian/ is skipped.">
 					<CommitInput value="" placeholder="/home/me/Obsidian/MyVault" ariaLabel="Obsidian vault path" testid="brain-vault-path" onCommit={(v) => (v.trim() ? index(v.trim()).then(() => true) : false)} />
 				</SettingsRow>

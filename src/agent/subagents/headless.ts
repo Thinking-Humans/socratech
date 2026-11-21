@@ -148,10 +148,22 @@ export function browserServiceSpawnEnv(
 /** The helper binary: inside the packaged app the server runs under
  *  ELECTRON_RUN_AS_NODE so process.execPath IS the app binary; in dev
  *  (plain node) the electron package resolves to the dev binary path. */
+/** Dev repo root. Under Next's bundler import.meta.url is a virtual
+ *  `/ROOT/...` path, so fall back to the server's cwd (the repo in dev). */
+function devRepoRoot(): string {
+	try {
+		const fromModule = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
+		if (fs.existsSync(path.join(/* turbopackIgnore: true */ fromModule, "package.json"))) return fromModule;
+	} catch {
+		// not a file: URL under the bundler
+	}
+	return process.cwd();
+}
+
 export function browserServiceBinary(): string | null {
 	if (process.versions.electron) return process.execPath;
 	try {
-		const req = createRequire(import.meta.url);
+		const req = createRequire(path.join(/* turbopackIgnore: true */ devRepoRoot(), "package.json"));
 		const p = req("electron") as unknown as string;
 		return typeof p === "string" && p.length > 0 ? p : null;
 	} catch {
@@ -184,8 +196,7 @@ async function connectBrowserService(): Promise<ConnectedBrowserService | null> 
 		// Dev: the bare electron binary needs the repo root as the app arg —
 		// flagless it would open Electron's default app instead of our shell.
 		const appArgs = process.versions.electron ? ["--browser-service"] : [
-			// src/agent/subagents → repo root
-			path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", ".."),
+			devRepoRoot(),
 			"--browser-service",
 		];
 		proc = spawn(binary, appArgs, {

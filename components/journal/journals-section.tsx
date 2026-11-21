@@ -13,13 +13,13 @@ import { NotebookPenIcon, PlusIcon } from "lucide-react";
 import type { JournalSummary } from "@/src/core";
 import { useServerEvent, useServerResync } from "@/components/server-events";
 import { createNotebook, journalApi } from "@/components/journal/journal-api";
-import { JOURNAL_ONLY } from "@/components/journal/journal-only";
 import { cn } from "@/lib/utils";
 
 export function journalHref(j: Pick<JournalSummary, "id" | "chatId">): string {
-	// Journal-only app (2026-11-15): every journal opens on its own page.
-	if (JOURNAL_ONLY) return `/notebook/${j.id}`;
-	return j.chatId ? `/chat/${j.chatId}?view=journal` : `/notebook/${j.id}`;
+	// Every notebook opens on its own page (2026-11-15; kept with sessions
+	// back on, 2026-11-21): that page carries the cells' visualizer,
+	// fullscreen, confidence and the notebook video.
+	return `/notebook/${j.id}`;
 }
 
 /** `fill`: the section IS the sidebar (journal-only) — full height, no divider. */

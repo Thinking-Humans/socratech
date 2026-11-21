@@ -46,10 +46,10 @@ import {
 import { UNDERSTANDING_LEVELS, type CellGraphState, type CellUnderstanding, type Journal, type JournalCell } from "../core/contracts/journal.ts";
 import { searchJournals, type JournalSearchHit } from "../core/journal-search.ts";
 import type { ChatStore, JournalStore } from "../core/ports.ts";
-import { restartKernel, runCode, type RunResult } from "./code-runner.ts";
+import { connectKernel, interruptKernel, kernelStatus, restartKernel, runCode, type KernelStatus, type RunResult } from "./code-runner.ts";
+import { getAccelerator, reconcileRunPods } from "./accelerators.ts";
 import { marimoCleanCheck, type MarimoCleanReport } from "./marimo-check.ts";
-import { NoteError } from "./notes.ts";
-import { strongTextStream } from "./notes-ask.ts";
+import { ModelTextError, quickTextStream, strongTextStream } from "./model-text.ts";
 import { stores } from "./stores.ts";
 
 export function newJournalId(): string {
@@ -124,7 +124,12 @@ export function createJournal(init: { title: string; chatId?: string; slug?: str
 }
 
 export function patchJournalMeta(id: string, patch: JournalMetaPatch): Journal {
-	return mutate(id, (j, now) => updateJournalMeta(j, patch, now));
+	if (patch.accelerator && !getAccelerator(patch.accelerator)) throw new JournalError(`No accelerator [${patch.accelerator}] — add it in Settings → Accelerators.`, "invalid");
+	const before = requireJournal(id).accelerator ?? null;
+	const journal = mutate(id, (j, now) => updateJournalMeta(j, patch, now));
+	// Moving machines: Python state can't follow — end the old session (and release its machine).
+	if ((journal.accelerator ?? null) !== before) restartKernel(id);
+	return journal;
 }
 
 export function addJournalCell(id: string, init: Omit<NewCellInit, "id" | "origin">, afterId?: string): Journal {
@@ -161,6 +166,8 @@ export function deleteJournal(id: string): boolean {
 		// under journal-work/ stay — they may be the learner's).
 		restartKernel(id);
 		fs.rmSync(path.join(PATHS.data, "journal-media", id.replace(/[^\w-]/g, "_")), { recursive: true, force: true });
+		// Its notebook-video project + job state too (the MP4 itself lives in media).
+		fs.rmSync(path.join(/* turbopackIgnore: true */ PATHS.journalVideo, id.replace(/[^\w-]/g, "_")), { recursive: true, force: true });
 	}
 	return deleted;
 }
@@ -214,7 +221,13 @@ export function parseMetaPatch(body: Body): JournalMetaPatch {
 	const title = optString(body, "title");
 	const slug = optString(body, "slug");
 	const tags = optStrings(body, "tags");
-	return { ...(title !== undefined ? { title } : {}), ...(slug !== undefined ? { slug } : {}), ...(tags ? { tags } : {}) };
+	const accelerator = body.accelerator === null || body.accelerator === "" ? null : optString(body, "accelerator");
+	return {
+		...(title !== undefined ? { title } : {}),
+		...(slug !== undefined ? { slug } : {}),
+		...(tags ? { tags } : {}),
+		...(accelerator !== undefined ? { accelerator } : {}),
+	};
 }
 
 export function parseNewCell(body: Body): { init: Omit<NewCellInit, "id" | "origin">; afterId?: string } {
@@ -317,7 +330,8 @@ export async function runJournalCell(id: string, cellId: string): Promise<{ jour
 	const lang = runnableLang(cell.lang);
 	if (!lang) throw new JournalError(`Can't run "${cell.lang || "text"}" — set the cell's language to python or cpp.`, "invalid");
 	if (!cell.source.trim()) throw new JournalError("The cell is empty.", "invalid");
-	const run = await runCode(id, lang, cell.source);
+	const accelerator = getAccelerator(requireJournal(id).accelerator);
+	const run = await runCode(id, lang, cell.source, { accelerator, cellId });
 	const journal = patchJournalCell(id, cellId, { output: run.output, executionCount: run.executionCount });
 	if (lang !== "python") return { journal, run };
 	return { journal, run, marimo: await marimoCleanCheck(journal) };
@@ -328,10 +342,34 @@ export async function journalMarimoCheck(id: string): Promise<MarimoCleanReport>
 	return marimoCleanCheck(requireJournal(id));
 }
 
-/** Drop the journal's Python state; run numbers restart at 1. */
+/** Drop the journal's Python state; run numbers restart at 1 (and a cloud machine is released). */
 export function restartJournalKernel(id: string): void {
 	requireJournal(id);
 	restartKernel(id);
+}
+
+/** The notebook's kernel: where it runs, connecting / ready / running (with live output). */
+export function journalKernelStatus(id: string): KernelStatus & { accelerator: { id: string; name: string; kind: string } | null; missingAccelerator?: string } {
+	const j = requireJournal(id);
+	const acc = getAccelerator(j.accelerator);
+	// Boot-time safety net (the home page opens a notebook, which polls this): orphaned pods stop billing.
+	void reconcileRunPods().catch(() => {});
+	return {
+		...kernelStatus(id),
+		accelerator: acc ? { id: acc.id, name: acc.name, kind: acc.kind } : null,
+		...(j.accelerator && !acc ? { missingAccelerator: j.accelerator } : {}),
+	};
+}
+
+/** Start the notebook's kernel now (cloud machines take minutes) — before the first run. */
+export function connectJournalKernel(id: string): void {
+	connectKernel(id, getAccelerator(requireJournal(id).accelerator));
+}
+
+/** Stop the running cell. */
+export function interruptJournalKernel(id: string): boolean {
+	requireJournal(id);
+	return interruptKernel(id);
 }
 
 const ASK_ANSWER_PREFIX = "**/ask** ";
@@ -360,7 +398,7 @@ export function journalAskStream(id: string, cellId: string, question: string): 
 	try {
 		return strongTextStream(JOURNAL_ASK_SYSTEM_PROMPT, prompt, "journal-ask", undefined, save);
 	} catch (err) {
-		if (err instanceof NoteError) throw new JournalError(err.message, "invalid");
+		if (err instanceof ModelTextError) throw new JournalError(err.message, "invalid");
 		throw err;
 	}
 }
@@ -382,7 +420,7 @@ export function journalAgentStream(id: string, cellId: string): ReadableStream<U
 			patchJournalCell(id, cellId, { output: answer.trim() });
 		});
 	} catch (err) {
-		if (err instanceof NoteError) throw new JournalError(err.message, "invalid");
+		if (err instanceof ModelTextError) throw new JournalError(err.message, "invalid");
 		throw err;
 	}
 }
@@ -396,15 +434,15 @@ export function searchAllJournals(query: string): JournalSearchHit[] {
 	return searchJournals(journals, query);
 }
 
-/** Inline ask while editing: stream an explanation / insert text about the
+/** Inline ask while editing (cheap slot, low thinking — latency first): stream an explanation / insert text about the
  *  highlighted passage. Ephemeral — nothing is saved. */
 export function journalInlineStream(id: string, cellId: string, input: InlineAskInput, signal?: AbortSignal): ReadableStream<Uint8Array> {
 	const prompt = inlineAskPrompt(requireJournal(id), cellId, input);
 	const system = input.mode === "insert" ? INLINE_INSERT_SYSTEM_PROMPT : INLINE_EXPLAIN_SYSTEM_PROMPT;
 	try {
-		return strongTextStream(system, prompt, "notebook-inline", signal);
+		return quickTextStream(system, prompt, "notebook-inline", signal);
 	} catch (err) {
-		if (err instanceof NoteError) throw new JournalError(err.message, "invalid");
+		if (err instanceof ModelTextError) throw new JournalError(err.message, "invalid");
 		throw err;
 	}
 }
@@ -423,7 +461,7 @@ export async function draftCellFlashcards(id: string, cellId: string, signal?: A
 	try {
 		stream = strongTextStream(FLASHCARD_DRAFT_SYSTEM_PROMPT, flashcardDraftPrompt(journal, cellId), "journal-flashcards", signal);
 	} catch (err) {
-		if (err instanceof NoteError) throw new JournalError(err.message, "invalid");
+		if (err instanceof ModelTextError) throw new JournalError(err.message, "invalid");
 		throw err;
 	}
 	const reply = await new Response(stream).text();

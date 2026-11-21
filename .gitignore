@@ -30,3 +30,7 @@ xai-credentials.json*
 # dev-fresh launcher scratch (fresh-user sim): disposable per launch
 .fresh-data/
 .claude/worktrees/
+
+# YouTube OAuth client + refresh token (notebook video upload) — beside auth.json, never committed
+youtube-auth.json
+accelerator-keys.json

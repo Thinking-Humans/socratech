@@ -34,8 +34,9 @@ import type {
 	PublishTarget,
 } from "../core/contracts/journal.ts";
 import { exportJournal, publishedCells, publishedMediaNames, type JournalBundle } from "../core/journal-export.ts";
-import { MEDIA_DIR } from "../core/journal-media.ts";
+import { MEDIA_DIR, isVisualName } from "../core/journal-media.ts";
 import { journalMediaFile } from "./journal-media.ts";
+import { hugoHtmlMediaFix } from "./site-config.ts";
 import { extractPublishedNotebook } from "./notebook-learning.ts";
 import { JournalError } from "../core/journal.ts";
 import { getGraph } from "../core/graph.ts";
@@ -203,6 +204,18 @@ export async function planPublish(journalId: string): Promise<PublishPlan> {
 	}
 	for (const name of onDiskMedia) if (!media.includes(name)) plan.files.push({ name: `${MEDIA_DIR}/${name}`, status: "removed" });
 
+	// Interactive visuals (media/*.html) break Hugo builds unless the site
+	// serves them as static files (site-config.ts): patch its config, or block.
+	if (media.some(isVisualName)) {
+		const fix = hugoHtmlMediaFix(target.siteRepo);
+		if (fix.kind === "blocker") plan.blockers.push(fix.message);
+		else if (fix.kind === "patch") {
+			plan.siteConfig = { name: fix.name, status: "changed", content: fix.content };
+			const dirtyConfig = await tryGit(target.siteRepo, ["status", "--porcelain", "--", fix.name]);
+			if (dirtyConfig) plan.blockers.push(`${fix.name} has uncommitted changes in the site repo — commit or discard them first.`);
+		}
+	}
+
 	const dirty = await tryGit(target.siteRepo, ["status", "--porcelain", "--", dir]);
 	if (dirty) plan.blockers.push(`${dir} has uncommitted changes in the site repo — commit or discard them first.`);
 
@@ -248,13 +261,20 @@ export async function publishJournal(journalId: string, confirmDir: string): Pro
 			}
 		}
 
-		await git(target.siteRepo, ["add", "-A", "--", dir]);
-		const staged = await git(target.siteRepo, ["diff", "--cached", "--name-only", "--", dir]);
+		// The site config patch (if any) rides in the same commit as the bundle.
+		const paths = [dir];
+		if (plan.siteConfig) {
+			fs.writeFileSync(path.join(target.siteRepo, plan.siteConfig.name), plan.siteConfig.content, "utf-8");
+			paths.push(plan.siteConfig.name);
+		}
+
+		await git(target.siteRepo, ["add", "-A", "--", ...paths]);
+		const staged = await git(target.siteRepo, ["diff", "--cached", "--name-only", "--", ...paths]);
 		let commit: string | undefined;
 		let pushed = false;
 		if (staged) {
-			// `commit -- <dir>` commits ONLY the bundle, whatever else is staged.
-			await git(target.siteRepo, ["commit", "--quiet", "-m", plan.commitMessage, "--", dir]);
+			// `commit -- <paths>` commits ONLY the bundle (+ config patch), whatever else is staged.
+			await git(target.siteRepo, ["commit", "--quiet", "-m", plan.commitMessage, "--", ...paths]);
 			commit = await git(target.siteRepo, ["rev-parse", "HEAD"]);
 			if (target.push && plan.remote && plan.branch) {
 				await git(target.siteRepo, ["push", "--quiet", plan.remote, `HEAD:${plan.branch}`]);

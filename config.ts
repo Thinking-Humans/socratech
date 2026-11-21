@@ -25,6 +25,10 @@ export const PATHS = {
 	root: ROOT,
 	/** Teacher system prompt — the agent's instructions (src/agent/). */
 	teacherPrompt: path.join(ROOT, "src", "agent", "system-prompt.md"),
+	/** 3b1b-style visualizer skill — the notebook visualizer's look/story guide (V on a cell). */
+	visualizerSkill: path.join(ROOT, "skills", "visualizer", "SKILL.md"),
+	/** Default notebook-video taste + workflow skill (shipped; the Settings editor's reset). */
+	notebookVideoSkill: path.join(ROOT, "skills", "notebook-video", "SKILL.md"),
 	data: DATA_ROOT,
 	/** Chat sessions (AI SDK UIMessage transcripts, one JSON file per chat). */
 	chats: path.join(/* turbopackIgnore: true */ DATA_ROOT, "chats"),
@@ -37,6 +41,13 @@ export const PATHS = {
 	journals: path.join(/* turbopackIgnore: true */ DATA_ROOT, "journals"),
 	/** The scratchpad (Mod+P): one plain-text file (src/store/scratchpad.ts). */
 	scratchpad: path.join(/* turbopackIgnore: true */ DATA_ROOT, "scratchpad.md"),
+	/** The learner's notebook-video taste (Settings → Notebook video); absent = the shipped default. */
+	notebookVideoTaste: path.join(/* turbopackIgnore: true */ DATA_ROOT, "notebook-video-taste.md"),
+	/** Notebook video projects + job state: data/journal-video/<journalId>/. */
+	journalVideo: path.join(/* turbopackIgnore: true */ DATA_ROOT, "journal-video"),
+	/** Accelerators (remote compute for notebooks): accelerators.json, the app's
+	 *  own SSH key + known_hosts for cloud pods, the RunPod pod ledger, the Modal venv. */
+	accelerators: path.join(/* turbopackIgnore: true */ DATA_ROOT, "accelerators"),
 	/** Notebooks (journals): `<id>.py` (marimo) + `<id>.socratech.json`
 	 *  sidecar each (src/store/notebooks.ts, core/marimo-format.ts). */
 	notebooks: path.join(/* turbopackIgnore: true */ DATA_ROOT, "notebooks"),

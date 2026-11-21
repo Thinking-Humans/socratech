@@ -21,21 +21,22 @@ import {
 	checkQuestionPrompt,
 	isPrerequisiteCell,
 	legacyCellSourcePath,
+	levelForConfidence,
 	notebookExtractableText,
 	notebookGraphStatus,
 	notebookSourcePath,
 	parseCheckVerdict,
 	prerequisiteRequest,
+	snapConfidence,
 	textHash,
 } from "../core/notebook-learning.ts";
 import { extractionEnabled } from "../core/settings-resolution.ts";
 import { slotsConfigured } from "../core/settings.ts";
-import type { GraphImportOutcome, Journal, UnderstandingCheck, UnderstandingLevel } from "../core/contracts/journal.ts";
+import type { GraphImportOutcome, Journal, UnderstandingCheck } from "../core/contracts/journal.ts";
 import type { EmissionStats } from "../core/contracts/graph.ts";
 import { extractionStatuses } from "../agent/subagents/extraction.ts";
 import { deleteJournal, deleteJournalCell, insertCellBefore, requireJournal, setCellLearning, setNotebookGraph } from "./journals.ts";
-import { NoteError } from "./notes.ts";
-import { strongTextStream } from "./notes-ask.ts";
+import { ModelTextError, strongTextStream } from "./model-text.ts";
 import { effectiveSettings, stores } from "./stores.ts";
 
 // ─── graph source per notebook ──────────────────────────────────────────────
@@ -158,20 +159,23 @@ export function deleteNotebook(id: string): boolean {
 // ─── rating ─────────────────────────────────────────────────────────────────
 
 /**
- * Rate a cell (null clears). "stuck" puts a prerequisites agent cell right
- * above it (reusing one already there) → its id, for the client to run.
+ * Rate a cell's confidence 0–100 (null clears; snapped to the stops). 0%
+ * ("stuck") puts a prerequisites agent cell right above it (reusing one
+ * already there) → its id, for the client to run.
  */
-export function rateCell(id: string, cellId: string, level: UnderstandingLevel | null): { journal: Journal; prereqCellId?: string } {
+export function rateCell(id: string, cellId: string, confidence: number | null): { journal: Journal; prereqCellId?: string } {
 	const journal = requireJournal(id);
 	const at = journal.cells.findIndex((c) => c.id === cellId);
 	const cell = journal.cells[at];
 	if (!cell) throw new JournalError(`No cell [${cellId}] in journal [${id}].`, "not_found");
 	if (!RATEABLE_ROLES.includes(cell.role)) throw new JournalError("Only markdown and code cells are rated.", "invalid");
-	if (level === null) return { journal: setCellLearning(id, cellId, { understanding: null }) };
+	if (confidence === null) return { journal: setCellLearning(id, cellId, { understanding: null }) };
+	const snapped = snapConfidence(confidence);
+	const level = levelForConfidence(snapped);
 	const hash = textHash(cell.source);
 	// A check was about this exact text — it survives a re-rating of the same text.
 	const check = cell.understanding?.hash === hash ? cell.understanding.check : undefined;
-	let next = setCellLearning(id, cellId, { understanding: { level, hash, at: new Date().toISOString(), ...(check ? { check } : {}) } });
+	let next = setCellLearning(id, cellId, { understanding: { level, confidence: snapped, hash, at: new Date().toISOString(), ...(check ? { check } : {}) } });
 	if (level !== "stuck") return { journal: next };
 	const above = next.cells[at - 1];
 	if (isPrerequisiteCell(above)) return { journal: next, prereqCellId: above!.id };
@@ -186,7 +190,7 @@ function strong(system: string, prompt: string, prefix: string): ReadableStream<
 	try {
 		return strongTextStream(system, prompt, prefix);
 	} catch (err) {
-		if (err instanceof NoteError) throw new JournalError(err.message, "invalid");
+		if (err instanceof ModelTextError) throw new JournalError(err.message, "invalid");
 		throw err;
 	}
 }

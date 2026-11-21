@@ -17,7 +17,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowDownIcon, ArrowUpIcon, EyeIcon, EyeOffIcon, LayersIcon, LoaderCircleIcon, PaperclipIcon, PlayIcon, SparklesIcon, Trash2Icon } from "lucide-react";
+import { ArrowDownIcon, ArrowUpIcon, EyeIcon, EyeOffIcon, LayersIcon, LoaderCircleIcon, Maximize2Icon, Minimize2Icon, PaperclipIcon, PlayIcon, ShapesIcon, SparklesIcon, SquareIcon, Trash2Icon } from "lucide-react";
+import { elapsedSince } from "@/components/journal/kernel-status";
 import {
 	JOURNAL_CELL_ROLES,
 	MEDIA_ACCEPT,
@@ -35,6 +36,7 @@ import { journalApi } from "@/components/journal/journal-api";
 import { InlineAskBox, type InlineAskRequest } from "@/components/journal/inline-ask";
 import type { InlineAskMode } from "@/src/core";
 import { CellLearningBar } from "@/components/journal/cell-learning";
+import { JournalVisual } from "@/components/journal/journal-visual";
 import { MarimoWarning } from "@/components/journal/marimo-warning";
 import { bindingForAction, eventBinding } from "@/src/core";
 import { MessageResponse } from "@/components/ai-elements/message";
@@ -93,7 +95,9 @@ function MarkdownWithMedia({ text, journalId }: { text: string; journalId: strin
 		flush();
 		const src = journalMediaUrl(journalId, embed.name);
 		blocks.push(
-			embed.kind === "video" ? (
+			embed.kind === "visual" ? (
+				<JournalVisual key={`m-${blocks.length}`} journalId={journalId} name={embed.name} title={embed.alt} />
+			) : embed.kind === "video" ? (
 				<video
 					key={`m-${blocks.length}`}
 					controls
@@ -167,15 +171,24 @@ export interface JournalCellProps {
 	onAsk: (question: string) => Promise<void>;
 	/** Open the flashcards dialog for this cell (F). */
 	onFlashcards: () => void;
+	/** Build a 3b1b-style visual of this cell into the next cell (V). */
+	onVisualize: () => void;
+	/** A visual of this cell is being built right now. */
+	visualizing?: boolean;
 	/** Inline ask → "Save as cell": keep an answer as a private aside below this cell. */
 	onSaveAside: (question: string, answer: string) => void;
 	running: boolean;
+	/** A running code cell: its output so far, when it started, and where (an accelerator's name). */
+	live?: { output: string; startedAt: string; where?: string };
+	/** Stop the running code cell (KeyboardInterrupt). */
+	onStop?: () => void;
 	/** The ask streaming under this cell right now, if any. */
 	asking?: { question: string; text: string } | null;
 	/** Agent cells: the answer streaming in right now. */
 	streaming?: string | null;
 	/** The learning bar: rating, cross-check, graph. */
-	onRate: (level: import("@/src/core").UnderstandingLevel | null) => void;
+	/** Confidence 0–100 (null clears). */
+	onRate: (confidence: number | null) => void;
 	onJournal: (j: import("@/src/core").Journal) => void;
 	/** The notebook's undo/redo — reached from edit mode once the text box's own history is empty. */
 	onHistory: (direction: "undo" | "redo") => void;
@@ -212,7 +225,11 @@ export function JournalCellView({
 	onAsk,
 	onSaveAside,
 	onFlashcards,
+	onVisualize,
+	visualizing = false,
 	running,
+	live,
+	onStop,
 	asking,
 	streaming,
 	onRate,
@@ -227,6 +244,35 @@ export function JournalCellView({
 	const fileRef = useRef<HTMLInputElement>(null);
 	const [uploading, setUploading] = useState(0);
 	const [uploadError, setUploadError] = useState<string | null>(null);
+	/** This cell fills the screen (browser Fullscreen API; Esc leaves). When
+	 *  the browser refuses, it fills the window instead ("window" mode). */
+	const [nativeFull, setNativeFull] = useState(false);
+	const [windowFull, setWindowFull] = useState(false);
+	const fullscreen = nativeFull || windowFull;
+	useEffect(() => {
+		const sync = () => setNativeFull(document.fullscreenElement === rootRef.current && rootRef.current !== null);
+		document.addEventListener("fullscreenchange", sync);
+		return () => document.removeEventListener("fullscreenchange", sync);
+	}, []);
+	useEffect(() => {
+		if (!windowFull) return;
+		const onKey = (e: KeyboardEvent) => {
+			if (e.key !== "Escape") return;
+			e.preventDefault();
+			e.stopPropagation();
+			setWindowFull(false);
+		};
+		window.addEventListener("keydown", onKey, true);
+		return () => window.removeEventListener("keydown", onKey, true);
+	}, [windowFull]);
+	const toggleFullscreen = () => {
+		const el = rootRef.current;
+		if (!el) return;
+		if (windowFull) setWindowFull(false);
+		else if (document.fullscreenElement === el) void document.exitFullscreen();
+		else if (!el.requestFullscreen) setWindowFull(true);
+		else void el.requestFullscreen().catch(() => setWindowFull(true));
+	};
 
 	/** Upload files and insert their embeds at the caret, each on its own line. */
 	const attach = async (files: File[]) => {
@@ -535,8 +581,11 @@ export function JournalCellView({
 			}}
 			className={cn(
 				"group relative rounded-lg px-3 py-2 outline-none transition-colors focus-visible:ring-1 focus-visible:ring-ring",
+				// Fullscreen: the cell alone on the page background, scrollable, centred column.
+				"[&:fullscreen]:overflow-y-auto [&:fullscreen]:rounded-none [&:fullscreen]:bg-background [&:fullscreen]:px-[max(2rem,calc((100vw-72rem)/2))] [&:fullscreen]:py-8 [&:fullscreen]:opacity-100",
 				editing ? "bg-accent/40" : "hover:bg-accent/20",
 				!cell.publish && !editing && "opacity-70",
+				windowFull && "fixed inset-0 z-50 overflow-y-auto rounded-none bg-background px-[max(2rem,calc((100vw-72rem)/2))] py-8 opacity-100",
 			)}
 		>
 			<div className="mb-1 flex select-none items-center gap-2 text-[11px] uppercase tracking-wider text-muted-foreground">
@@ -563,11 +612,16 @@ export function JournalCellView({
 					</span>
 				)}
 				<span className="flex-1" />
-				{canRun && (
-					<IconButton label={running ? "Running…" : isAgent ? "Run agent (Ctrl/⌘+Enter)" : "Run cell (Ctrl/⌘+Enter)"} testid="journal-cell-run" disabled={running} onClick={() => void onRun()}>
-						{running ? <LoaderCircleIcon className="size-3.5 animate-spin" /> : <PlayIcon className="size-3.5 text-primary" />}
-					</IconButton>
-				)}
+				{canRun &&
+					(running && isCode && onStop ? (
+						<IconButton label="Stop (interrupt the cell)" testid="journal-cell-stop" onClick={onStop}>
+							<SquareIcon className="size-3.5 fill-current text-destructive" />
+						</IconButton>
+					) : (
+						<IconButton label={running ? "Running…" : isAgent ? "Run agent (Ctrl/⌘+Enter)" : "Run cell (Ctrl/⌘+Enter)"} testid="journal-cell-run" disabled={running} onClick={() => void onRun()}>
+							{running ? <LoaderCircleIcon className="size-3.5 animate-spin" /> : <PlayIcon className="size-3.5 text-primary" />}
+						</IconButton>
+					))}
 				<div className={cn("flex items-center gap-0.5", !editing && "opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100")}>
 					<IconButton label="Move up" disabled={index === 0} onClick={() => onMove(index - 1)}>
 						<ArrowUpIcon className="size-3.5" />
@@ -578,10 +632,16 @@ export function JournalCellView({
 					<IconButton label="Make flashcards from this cell (F)" testid="journal-cell-flashcards" onClick={onFlashcards}>
 						<LayersIcon className="size-3.5" />
 					</IconButton>
+					<IconButton label={visualizing ? "Building visual…" : "Visualize this cell, 3b1b-style, in the next cell (V)"} testid="journal-cell-visualize" disabled={visualizing} onClick={onVisualize}>
+						{visualizing ? <LoaderCircleIcon className="size-3.5 animate-spin" /> : <ShapesIcon className="size-3.5" />}
+					</IconButton>
 					<IconButton label="Delete cell" onClick={onDelete}>
 						<Trash2Icon className="size-3.5" />
 					</IconButton>
 				</div>
+				<IconButton label={fullscreen ? "Exit fullscreen (Esc)" : "Fullscreen"} testid="journal-cell-fullscreen" onClick={toggleFullscreen}>
+					{fullscreen ? <Minimize2Icon className="size-3.5" /> : <Maximize2Icon className="size-3.5" />}
+				</IconButton>
 				<IconButton
 					label={cell.publish ? "Published — click to keep private" : "Private — click to publish"}
 					testid="journal-cell-publish"
@@ -718,7 +778,23 @@ export function JournalCellView({
 					{agentAnswer.trim() ? <MessageResponse>{agentAnswer}</MessageResponse> : <span className="text-xs italic text-muted-foreground">thinking…</span>}
 				</div>
 			)}
-			{renderedOutput && (
+			{running && isCode && (
+				<div className="mt-1 rounded-md border border-dashed border-primary/40 px-2 py-1.5" data-testid="journal-cell-live">
+					<div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-muted-foreground">
+						<LoaderCircleIcon className="size-3 animate-spin text-primary" />
+						Running{live?.where ? ` on ${live.where}` : ""}
+						{live ? ` · ${elapsedSince(live.startedAt)}` : ""}
+						<span className="flex-1" />
+						{onStop && (
+							<button type="button" onClick={onStop} className="rounded px-1.5 py-0.5 normal-case tracking-normal hover:bg-accent hover:text-foreground">
+								Stop
+							</button>
+						)}
+					</div>
+					{live?.output && <pre className="mt-1 max-h-72 overflow-y-auto whitespace-pre-wrap break-words font-mono text-xs">{live.output.slice(-8000)}</pre>}
+				</div>
+			)}
+			{renderedOutput && !(running && isCode && live?.output) && (
 				<div data-ask-scope className="mt-1 border-l-2 border-border pl-2 text-sm" data-testid="journal-cell-output">
 					<MessageResponse>{renderedOutput}</MessageResponse>
 				</div>

@@ -25,11 +25,13 @@ function paths(relative: string) {
 	return { file, calls, ignored };
 }
 
-test("config opts out each mutable path producer, retaining the shipped prompt asset", () => {
+test("config opts out each mutable path producer, retaining the shipped prompt assets", () => {
 	const { file, calls, ignored } = paths("config.ts");
-	const prompt = calls.filter(call => ts.isPropertyAssignment(call.parent) && call.parent.name.getText(file) === "teacherPrompt");
-	assert.equal(prompt.length, 1);
-	assert.equal(ignored(prompt[0]!), false, "the built-in teacher prompt must remain traceable");
+	// Read-only assets that ship: the teacher prompt and the visualizer skill.
+	const shipped = ["teacherPrompt", "visualizerSkill", "notebookVideoSkill"];
+	const prompt = calls.filter(call => ts.isPropertyAssignment(call.parent) && shipped.includes(call.parent.name.getText(file)));
+	assert.equal(prompt.length, shipped.length);
+	for (const call of prompt) assert.equal(ignored(call), false, `shipped asset must remain traceable: ${call.getText(file)}`);
 	const mutable = calls.filter(call => !prompt.includes(call));
 	assert.ok(mutable.length > 0);
 	for (const call of mutable) assert.ok(ignored(call), `Runtime path must not ship: ${call.getText(file)}`);

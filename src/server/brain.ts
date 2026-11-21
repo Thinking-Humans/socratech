@@ -42,7 +42,6 @@ import { subscribe, type ServerEvent } from "../core/events.ts";
 import { renderJournalMarkdown } from "../core/journal-export.ts";
 import type { Embedder } from "../core/ports.ts";
 import { resolveRoleSpec } from "../core/settings-resolution.ts";
-import { vaultDir } from "./notes.ts";
 import { stores } from "./stores.ts";
 
 export class BrainError extends Error {
@@ -190,6 +189,8 @@ async function embedRecords(records: readonly BrainRecord[]): Promise<Float32Arr
 
 // ── Vault indexing ─────────────────────────────────────────────────────────
 
+/** Chunks indexed before vault names existed came from the app's old notes
+ *  vault (notes feature removed 2026-11-21): their records carry no vault. */
 const NOTES_VAULT = "notes";
 
 function listMarkdown(root: string): string[] {
@@ -210,7 +211,6 @@ function vaultNameFor(dir: string, vaults: Record<string, string>): string {
 	const abs = path.resolve(dir);
 	const existing = Object.entries(vaults).find(([, d]) => d === abs);
 	if (existing) return existing[0];
-	if (abs === path.resolve(vaultDir())) return NOTES_VAULT;
 	const base = path.basename(abs) || "vault";
 	let name = base;
 	for (let n = 2; name in vaults; n++) name = `${base}-${n}`;
@@ -220,7 +220,8 @@ function vaultNameFor(dir: string, vaults: Record<string, string>): string {
 /** Index (or re-index) a vault folder. Unchanged chunks keep their vectors;
  *  changed / new ones are embedded; vanished ones are dropped. */
 export function indexVault(dir?: string): Promise<{ vault: string; added: number; dropped: number; kept: number }> {
-	const abs = path.resolve(dir ?? vaultDir());
+	if (!dir?.trim()) return Promise.reject(new BrainError("Pick a vault folder to index.", "invalid"));
+	const abs = path.resolve(dir);
 	if (!fs.existsSync(abs) || !fs.statSync(abs).isDirectory()) return Promise.reject(new BrainError(`Not a folder: ${abs}`, "invalid"));
 	return serial(async () => {
 		const s = state();
@@ -258,14 +259,6 @@ export function removeVault(name: string): Promise<void> {
 		delete vaults[name];
 		commit(base, (r) => !(r.type === "chunk" && (r.source.vault ?? NOTES_VAULT) === name), [], [], { vaults });
 	});
-}
-
-/** A note was saved in the app: re-index the notes vault shortly after
- *  (debounced — typing autosaves every 600 ms). Only once the learner has
- *  indexed the notes vault. */
-export function brainNoteSaved(): void {
-	if (!(NOTES_VAULT in snapshot().vaults)) return;
-	debounce("vault:notes", 15_000, () => void indexVault(vaultDir()).catch(() => undefined));
 }
 
 // ── Search ─────────────────────────────────────────────────────────────────

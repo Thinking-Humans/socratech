@@ -16,6 +16,7 @@ const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "lh-publish-"));
 process.env.LH_DATA_DIR = path.join(TMP, "data");
 
 const { stores, createJournal, addJournalCell, patchJournalMeta, planPublish, publishJournal, postUrl } = await import("../src/server/index.ts");
+const { journalMediaDir } = await import("../src/server/journal-media.ts");
 const publishRoute = await import("../app/api/journals/[id]/publish/route.ts");
 const settingsRoute = await import("../app/api/settings/[section]/route.ts");
 
@@ -175,6 +176,92 @@ describe("publish", () => {
 		const k = createJournal({ title: "Moved target" });
 		addJournalCell(k.id, { role: "reflection", source: "v1" });
 		await assert.rejects(publishJournal(k.id, "content/posts/somewhere-else"), /moved/);
+	});
+});
+
+describe("Hugo site config for interactive visuals (media/*.html)", () => {
+	/** A fresh site repo holding `files`, committed; publishing points at it (no push). */
+	function hugoSite(name: string, files: Record<string, string>): string {
+		const site = path.join(TMP, name);
+		fs.mkdirSync(site, { recursive: true });
+		sh(site, "init", "--quiet", "-b", "main");
+		sh(site, "config", "user.email", "test@example.com");
+		sh(site, "config", "user.name", "Test");
+		sh(site, "config", "commit.gpgsign", "false");
+		for (const [f, c] of Object.entries(files)) {
+			fs.mkdirSync(path.dirname(path.join(site, f)), { recursive: true });
+			fs.writeFileSync(path.join(site, f), c);
+		}
+		sh(site, "add", "-A");
+		sh(site, "commit", "--quiet", "-m", "init");
+		setPublishing({ siteRepo: site, push: false });
+		return site;
+	}
+
+	/** A journal whose published cell embeds `media`, stored as the visuals pipeline stores it. */
+	function journalWith(title: string, media: string) {
+		const j = createJournal({ title });
+		fs.mkdirSync(journalMediaDir(j.id), { recursive: true });
+		fs.writeFileSync(path.join(journalMediaDir(j.id), media), "<!doctype html><html><body>viz</body></html>");
+		addJournalCell(j.id, { role: "reflection", source: `See it:\n\n![viz](media/${media})` });
+		return j;
+	}
+
+	after(() => setPublishing({ siteRepo: SITE, baseUrl: "https://me.github.io/blog" }));
+
+	it("patches hugo.toml with the mounts and commits it together with the bundle", async () => {
+		const site = hugoSite("hugo-toml", { "hugo.toml": 'title = "x"\n' });
+		const j = journalWith("Viz post", "viz-abc123.html");
+		const plan = await planPublish(j.id);
+		assert.deepEqual(plan.blockers, []);
+		assert.equal(plan.siteConfig?.name, "hugo.toml");
+		assert.match(plan.siteConfig!.content, /^title = "x"\n\n# Socratech/);
+		assert.match(plan.siteConfig!.content, /files = \["\*\*\/media\/\*\.html"\]/);
+
+		await publishJournal(j.id, plan.dir!);
+		assert.deepEqual(sh(site, "show", "--name-only", "--format=", "HEAD").split("\n").sort(), [`${plan.dir}/index.md`, `${plan.dir}/media/viz-abc123.html`, "hugo.toml"]);
+		assert.match(fs.readFileSync(path.join(site, "hugo.toml"), "utf-8"), /\[\[module\.mounts\]\]/);
+
+		// already configured → no patch on the next publish
+		const k = journalWith("Viz post two", "viz-def456.html");
+		assert.equal((await planPublish(k.id)).siteConfig, undefined);
+	});
+
+	it("leaves non-Hugo sites and journals without visuals alone", async () => {
+		hugoSite("plain", { "README.md": "x\n" });
+		const j = journalWith("No hugo", "viz-aaa111.html");
+		const plan = await planPublish(j.id);
+		assert.deepEqual(plan.blockers, []);
+		assert.equal(plan.siteConfig, undefined);
+
+		hugoSite("hugo-no-viz", { "hugo.toml": 'title = "x"\n' });
+		const k = createJournal({ title: "Text only" });
+		addJournalCell(k.id, { role: "reflection", source: "words" });
+		assert.equal((await planPublish(k.id)).siteConfig, undefined);
+	});
+
+	it("blocks with the snippet when the config can't be patched safely", async () => {
+		const cases: [string, Record<string, string>, RegExp][] = [
+			["hugo-yaml", { "hugo.yaml": "title: x\n" }, /isn't TOML/],
+			["hugo-module", { "hugo.toml": '[module]\n  [[module.imports]]\n    path = "theme"\n' }, /already has a \[module\]/],
+			["hugo-dir", { "config/_default/hugo.toml": 'title = "x"\n' }, /config\/_default/],
+		];
+		for (const [name, files, why] of cases) {
+			hugoSite(name, files);
+			const j = journalWith(`Blocked ${name}`, "viz-bbb222.html");
+			const plan = await planPublish(j.id);
+			const msg = plan.blockers.join(" ");
+			assert.match(msg, why, name);
+			assert.match(msg, /\[\[module\.mounts\]\]/, name);
+			assert.equal(plan.siteConfig, undefined, name);
+		}
+	});
+
+	it("blocks a hugo.toml with uncommitted changes", async () => {
+		const site = hugoSite("hugo-dirty", { "hugo.toml": 'title = "x"\n' });
+		fs.appendFileSync(path.join(site, "hugo.toml"), "# wip\n");
+		const j = journalWith("Dirty config", "viz-ccc333.html");
+		assert.match((await planPublish(j.id)).blockers.join(" "), /hugo\.toml has uncommitted changes/);
 	});
 });
 

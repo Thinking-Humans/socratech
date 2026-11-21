@@ -171,6 +171,8 @@ export interface JournalMetaPatch {
 	title?: string;
 	slug?: string;
 	tags?: string[];
+	/** An accelerator id, or null for this machine. */
+	accelerator?: string | null;
 }
 
 export function updateJournalMeta(journal: Journal, patch: JournalMetaPatch, now: string): Journal {
@@ -190,6 +192,8 @@ export function updateJournalMeta(journal: Journal, patch: JournalMetaPatch, now
 		next.slug = patch.slug;
 	}
 	if (patch.tags !== undefined) next.tags = [...new Set(patch.tags.map((t) => t.trim()).filter(Boolean))];
+	if (patch.accelerator === null) delete next.accelerator;
+	else if (patch.accelerator !== undefined) next.accelerator = patch.accelerator;
 	return next;
 }
 

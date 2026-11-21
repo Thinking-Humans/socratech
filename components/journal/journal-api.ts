@@ -4,7 +4,7 @@
  * journal, only the one change. Every mutation returns the fresh journal.
  */
 
-import type { CellPatch, FlashcardDraft, InlineAskInput, MarimoRedefinition, UnderstandingCheck, UnderstandingLevel, Journal, JournalCell, JournalCellRole, JournalMetaPatch, JournalSummary, PublishPlan, PublishResult } from "@/src/core";
+import type { CellPatch, FlashcardDraft, InlineAskInput, MarimoRedefinition, UnderstandingCheck, Journal, JournalCell, JournalCellRole, JournalMetaPatch, JournalSummary, PublishPlan, PublishResult } from "@/src/core";
 
 export type { PublishPlan, PublishResult };
 
@@ -21,6 +21,21 @@ export interface MarimoCleanReport {
 	checked: boolean;
 	redefinitions: MarimoRedefinition[];
 	unparsable: { cellId: string; error: string }[];
+}
+
+/** GET /api/journals/[id]/kernel (server: code-runner.ts KernelStatus + the accelerator). */
+export interface KernelView {
+	state: "off" | "connecting" | "ready" | "running" | "error";
+	acceleratorId: string | null;
+	accelerator: { id: string; name: string; kind: string } | null;
+	missingAccelerator?: string;
+	phase?: string;
+	error?: string;
+	info?: { python?: string; host?: string; cwd?: string; gpus?: string[] };
+	where?: string;
+	running?: { cellId?: string; startedAt: string; output: string };
+	idleStopAt?: string;
+	executionCount: number;
 }
 
 export class JournalApiError extends Error {
@@ -93,6 +108,9 @@ export const journalApi = {
 	/** Run a code cell; the journal comes back with the cell's output + run number. */
 	runCell: async (id: string, cellId: string) => call<{ journal: Journal; run: CellRun }>(`${cellUrl(id, cellId)}/run`, "POST"),
 	restartKernel: async (id: string) => call<{ ok: true }>(`${base}/${id}/kernel`, "DELETE"),
+	kernelStatus: async (id: string) => call<KernelView>(`${base}/${id}/kernel`),
+	connectKernel: async (id: string) => call<KernelView>(`${base}/${id}/kernel`, "POST", { action: "connect" }),
+	interruptKernel: async (id: string) => call<KernelView>(`${base}/${id}/kernel`, "POST", { action: "interrupt" }),
 	/** marimo-clean report: Python globals two cells define (marimo refuses those). */
 	marimoCheck: async (id: string) => call<MarimoCleanReport>(`${base}/${id}/marimo`),
 	/** Stream an answer about one cell; the server saves it as an aside when done. */
@@ -104,6 +122,18 @@ export const journalApi = {
 	/** Run an agent cell; the server saves the answer as the cell's output when done. */
 	runAgent: (id: string, cellId: string, onText: (soFar: string) => void, signal?: AbortSignal) =>
 		streamText(`${cellUrl(id, cellId)}/agent`, {}, onText, signal),
+	/** Build a 3b1b-style visual of a cell (V): `onLine` gets each progress
+	 *  line; resolves to the inserted cell's id. */
+	visualize: async (id: string, cellId: string, onLine: (line: string) => void, signal?: AbortSignal): Promise<string> => {
+		let seen = 0;
+		const text = await streamText(`${cellUrl(id, cellId)}/visualize`, {}, (soFar) => {
+			const lines = soFar.split("\n");
+			for (; seen < lines.length - 1; seen++) if (lines[seen]!.trim() && !lines[seen]!.startsWith("@@")) onLine(lines[seen]!.trim());
+		}, signal);
+		const last = text.trim().split("\n").pop() ?? "";
+		if (last.startsWith("@@done ")) return last.slice(7).trim();
+		throw new JournalApiError(last.startsWith("@@failed ") ? last.slice(9) : "The visual could not be built.", 500);
+	},
 	/** Upload one image / video (streamed raw) → the markdown that embeds it. */
 	uploadMedia: async (id: string, file: File) => {
 		const res = await fetch(`${base}/${id}/media`, {
@@ -116,9 +146,9 @@ export const journalApi = {
 		if (!res.ok || !data.markdown) throw new JournalApiError(data.error ?? `Upload failed (${res.status})`, res.status, data.code);
 		return { name: data.name!, markdown: data.markdown };
 	},
-	/** Rate a cell (null clears); "stuck" returns the prerequisites agent cell to run. */
-	rateCell: async (id: string, cellId: string, level: UnderstandingLevel | null) =>
-		call<{ journal: Journal; prereqCellId?: string }>(`${cellUrl(id, cellId)}/rate`, "POST", { level }),
+	/** Rate a cell's confidence 0–100 (null clears); 0% returns the prerequisites agent cell to run. */
+	rateCell: async (id: string, cellId: string, confidence: number | null) =>
+		call<{ journal: Journal; prereqCellId?: string }>(`${cellUrl(id, cellId)}/rate`, "POST", { confidence }),
 	/** Read the whole notebook into the graph now (an edited notebook replaces its earlier contribution). */
 	extractNotebook: async (id: string) =>
 		call<{ journal: Journal; outcome: string; stats?: { nodes: number; chains?: number } }>(`${base}/${id}/extract`, "POST"),

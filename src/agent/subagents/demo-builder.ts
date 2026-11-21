@@ -44,9 +44,14 @@ export interface DemoBuilderOptions {
 	onUsage?: (usage: Usage) => void;
 	/** Debug: raw provider-event recording key (LH_PROVIDER_EVENTS=1). */
 	chatId?: string;
+	/** Style guide that REPLACES the default light-card look (e.g. the 3b1b
+	 *  visualizer skill). Runtime contract + test loop stay the same. */
+	look?: string;
 }
 
-const INSTRUCTIONS = `You are a demo builder — a specialist sub-agent inside a learning application. You
+const DEFAULT_LOOK = "- Dark-mode neutral: pick a clean light background for the demo area so it reads on any card.";
+
+const instructions = (look: string) => `You are a demo builder — a specialist sub-agent inside a learning application. You
 receive a brief for ONE interactive teaching instrument and deliver a single self-contained HTML document
 that runs it. You never see the lesson; the brief is everything you know.
 
@@ -61,7 +66,7 @@ Build quality:
 - The demo must directly serve the brief: every control named in the brief must exist and do the thing.
 - Controls need labels; sliders/inputs need current-value readouts. A learner should operate it unguided.
 - Smooth enough interaction; requestAnimationFrame for animation, not setInterval when it matters.
-- Dark-mode neutral: pick a clean light background for the demo area so it reads on any card.
+${look}
 
 THE HOUSE RULE — never deliver untested:
 1. Call write_demo with the complete HTML document.
@@ -207,7 +212,7 @@ export async function runDemoBuilder(input: DemoBuilderInput, opts: DemoBuilderO
 		const result = await runSubagent(Object.values(createDemoBuilderTools(state, headless, opts.onActivity)), {
 			role: "demoBuilder",
 			engine: opts.engine,
-			systemPrompt: INSTRUCTIONS,
+			systemPrompt: instructions(opts.look?.trim() || DEFAULT_LOOK),
 			prompt,
 			maxTurns: opts.maxSteps ?? 24,
 			abortSignal: opts.abortSignal,

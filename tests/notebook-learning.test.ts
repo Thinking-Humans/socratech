@@ -64,36 +64,49 @@ describe("rating a cell", () => {
 	it("rates the text as it stands; an edit makes the rating stale", () => {
 		const j = notebook({ role: "reflection", source: "Recursion = a function calling itself." });
 		const cellId = j.cells[0]!.id;
-		const { journal, prereqCellId } = learning.rateCell(j.id, cellId, "helped");
+		const { journal, prereqCellId } = learning.rateCell(j.id, cellId, 47);
 		assert.equal(prereqCellId, undefined);
+		assert.equal(journal.cells[0]!.understanding?.confidence, 50, "snapped to the nearest stop");
 		assert.equal(journal.cells[0]!.understanding?.level, "helped");
 		assert.equal(core.ratingIsStale(journal.cells[0]!), false);
 		const edited = patchJournalCell(j.id, cellId, { source: "Recursion = a function defined in terms of itself." });
 		assert.equal(core.ratingIsStale(edited.cells[0]!), true);
 		assert.equal(learning.rateCell(j.id, cellId, null).journal.cells[0]!.understanding, undefined);
 	});
-	it("'stuck' puts ONE prerequisites agent cell right above, reused on re-rating", () => {
+	it("0% ('stuck') puts ONE prerequisites agent cell right above, reused on re-rating", () => {
 		const j = notebook({ role: "reflection", source: "Intro." }, { role: "reflection", source: "The Y combinator gives recursion without names." });
 		const stuckId = j.cells[1]!.id;
-		const first = learning.rateCell(j.id, stuckId, "stuck");
+		const first = learning.rateCell(j.id, stuckId, 0);
 		const cells = first.journal.cells;
 		assert.equal(cells.length, 3);
 		assert.equal(cells[1]!.id, first.prereqCellId);
 		assert.equal(cells[1]!.role, "agent");
 		assert.match(cells[1]!.source, /^\*\*Prerequisites\*\* for cell 3 \(the cell right below\)/);
 		assert.equal(cells[2]!.id, stuckId);
-		const again = learning.rateCell(j.id, stuckId, "stuck");
+		const again = learning.rateCell(j.id, stuckId, 0);
 		assert.equal(again.prereqCellId, first.prereqCellId);
 		assert.equal(again.journal.cells.length, 3);
 	});
 	it("'stuck' on the first cell inserts at the very top", () => {
 		const j = notebook({ role: "code", source: "fix = lambda f: f(f)" });
-		const r = learning.rateCell(j.id, j.cells[0]!.id, "stuck");
+		const r = learning.rateCell(j.id, j.cells[0]!.id, 0);
 		assert.equal(r.journal.cells[0]!.id, r.prereqCellId);
 	});
 	it("agent cells are not rated", () => {
 		const j = notebook({ role: "agent", source: "explain" });
-		assert.throws(() => learning.rateCell(j.id, j.cells[0]!.id, "own"), /Only markdown and code/);
+		assert.throws(() => learning.rateCell(j.id, j.cells[0]!.id, 90), /Only markdown and code/);
+	});
+	it("confidence: stops, levels, older level-only ratings, ←/→ stepping", () => {
+		assert.equal(core.snapConfidence(64), 70);
+		assert.equal(core.snapConfidence(12), 0);
+		assert.deepEqual([0, 30, 50, 70, 90, 100].map(core.levelForConfidence), ["stuck", "helped", "helped", "own", "own", "own"]);
+		assert.equal(core.cellConfidence({ level: "own" }), 90);
+		assert.equal(core.cellConfidence({ level: "stuck" }), 0);
+		assert.equal(core.cellConfidence({ level: "helped", confidence: 30 }), 30);
+		assert.equal(core.stepConfidence(null, 1), 50);
+		assert.equal(core.stepConfidence(50, -1), 30);
+		assert.equal(core.stepConfidence(100, 1), 100);
+		assert.equal(core.stepConfidence(0, -1), 0);
 	});
 });
 

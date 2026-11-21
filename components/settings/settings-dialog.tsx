@@ -33,7 +33,7 @@ import {
 	type ReactNode,
 	type RefObject,
 } from "react";
-import { BotIcon, BrainIcon, KeyIcon, KeyboardIcon, PaletteIcon, PlugIcon, PuzzleIcon, SendIcon, SettingsIcon, SparklesIcon, WaypointsIcon, type LucideIcon } from "lucide-react";
+import { BotIcon, BrainIcon, KeyIcon, KeyboardIcon, PaletteIcon, PlugIcon, PuzzleIcon, SendIcon, SettingsIcon, ClapperboardIcon, SparklesIcon, WaypointsIcon, CpuIcon, type LucideIcon } from "lucide-react";
 import { HostDialog } from "@/components/host-dialog";
 import { useInteractionLayers, type CloseOutcome } from "@/components/interaction-layers";
 import {
@@ -57,6 +57,8 @@ import { AppearanceSection, GraphSection } from "./appearance-section.tsx";
 import { KeyboardSection } from "./keyboard-section.tsx";
 import { ClaudeSection } from "./claude-section.tsx";
 import { PublishingSection } from "./publishing-section.tsx";
+import { NotebookVideoSection } from "./notebook-video-section.tsx";
+import { AcceleratorsSection } from "./accelerators-section.tsx";
 import { BrainSection } from "./brain-section.tsx";
 import { PluginsSection } from "./plugins-section.tsx";
 import { PluginSettingsPage } from "./plugin-settings-page.tsx";
@@ -75,6 +77,8 @@ const SECTIONS = [
 	{ id: "keyboard", label: "Keyboard", icon: KeyboardIcon, hint: "Stored on this device" },
 	{ id: "claude", label: "Claude", icon: SparklesIcon },
 	{ id: "publishing", label: "Publishing", icon: SendIcon },
+	{ id: "notebook-video", label: "Notebook video", icon: ClapperboardIcon },
+	{ id: "accelerators", label: "Accelerators", icon: CpuIcon },
 	{ id: "brain", label: "Second brain", icon: BrainIcon },
 	{ id: "general", label: "General", icon: SettingsIcon },
 ] as const;
@@ -541,6 +545,24 @@ export function SettingsDialogBody({
 									testid="section-publishing"
 								>
 									<PublishingSection />
+								</SettingsSection>
+							)}
+							{active === "notebook-video" && (
+								<SettingsSection
+									title="Notebook video"
+									hint="Voiced videos of whole notebooks, made by Claude Code with HyperFrames."
+									testid="section-notebook-video"
+								>
+									<NotebookVideoSection />
+								</SettingsSection>
+							)}
+							{active === "accelerators" && (
+								<SettingsSection
+									title="Accelerators"
+									hint="Run notebooks on your own servers (SSH) or on GPUs from your RunPod / Modal account."
+									testid="section-accelerators"
+								>
+									<AcceleratorsSection />
 								</SettingsSection>
 							)}
 							{active === "brain" && (

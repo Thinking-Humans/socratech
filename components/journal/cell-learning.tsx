@@ -1,33 +1,31 @@
 "use client";
 
 /**
- * A cell's learning bar (owner, 2026-11-15): the learner's rating (did it
- * on my own / with help / couldn't, even with help), the agent's
- * cross-check of that rating. The graph is per NOTEBOOK (owner,
+ * A cell's learning bar (owner, 2026-11-15): the learner's confidence they
+ * understand the cell (owner, 2026-11-21: the quiz dock's 0–100 slider,
+ * replacing on my own / with help / couldn't), the agent's cross-check of
+ * that rating. 0% = couldn't understand → prerequisites get explained. The graph is per NOTEBOOK (owner,
  * 2026-11-15), so "Add to graph" lives in the notebook header.
  */
 
 import { useEffect, useRef, useState } from "react";
 import { LoaderCircleIcon, ShieldQuestionIcon } from "lucide-react";
 import {
+	CONFIDENCE_STOPS,
 	RATEABLE_ROLES,
-	UNDERSTANDING_LABEL,
-	UNDERSTANDING_LEVELS,
+	cellConfidence,
 	checkDisagrees,
 	ratingIsStale,
+	snapConfidence,
 	type JournalCell,
-	type UnderstandingLevel,
 } from "@/src/core";
+import { CONFIDENCE_COLORS, confidenceRailStyle } from "@/components/confidence-rail";
 import { MessageResponse } from "@/components/ai-elements/message";
 import { journalApi } from "@/components/journal/journal-api";
 import { cn } from "@/lib/utils";
 
-const SHORT: Record<UnderstandingLevel, string> = { own: "On my own", helped: "With help", stuck: "Couldn't, even with help" };
-const TONE: Record<UnderstandingLevel, string> = {
-	own: "border-success/60 bg-success/10 text-success",
-	helped: "border-warning/60 bg-warning/10 text-warning",
-	stuck: "border-error/60 bg-error/10 text-error",
-};
+/** Commit a dragged value once the slider rests (one save per gesture). */
+const COMMIT_MS = 350;
 const VERDICT_TONE = { holds: "text-success", shaky: "text-warning", fails: "text-error" } as const;
 
 export function CellLearningBar({
@@ -38,15 +36,30 @@ export function CellLearningBar({
 }: {
 	journalId: string;
 	cell: JournalCell;
-	onRate: (level: UnderstandingLevel | null) => void;
+	/** Confidence 0–100 (null clears). */
+	onRate: (confidence: number | null) => void;
 	/** Adopt a journal the check returned. */
 	onJournal: (j: import("@/src/core").Journal) => void;
 }) {
 	const [checkOpen, setCheckOpen] = useState(false);
-	const rateable = RATEABLE_ROLES.includes(cell.role);
-	if (!rateable) return null;
-
 	const u = cell.understanding;
+	const saved = u ? cellConfidence(u) : null;
+	// The slider's live value while dragging; follows the saved one otherwise.
+	const [draft, setDraft] = useState<number | null>(saved);
+	const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+	useEffect(() => setDraft(saved), [saved]);
+	useEffect(() => () => {
+		if (timer.current) clearTimeout(timer.current);
+	}, []);
+	if (!RATEABLE_ROLES.includes(cell.role)) return null;
+	const change = (v: number) => {
+		setDraft(v);
+		if (timer.current) clearTimeout(timer.current);
+		timer.current = setTimeout(() => v !== saved && onRate(v), COMMIT_MS);
+	};
+	const shown = draft ?? 50;
+	const color = draft === null ? undefined : CONFIDENCE_COLORS[CONFIDENCE_STOPS.indexOf(shown)];
+
 	const stale = ratingIsStale(cell);
 	const mismatch = u?.check && checkDisagrees(u.level, u.check.verdict);
 	const quiet = !u && !checkOpen;
@@ -59,23 +72,46 @@ export function CellLearningBar({
 		>
 			<div className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
 				<>
-						{UNDERSTANDING_LEVELS.map((level, i) => (
-							<button
-								key={level}
-								type="button"
-								data-testid={`rate-${level}`}
-								aria-pressed={u?.level === level}
-								title={`${UNDERSTANDING_LABEL[level]} (${i + 1})`}
-								onClick={() => onRate(u?.level === level ? null : level)}
+						<span className="shrink-0 uppercase tracking-wide">Confidence</span>
+						<div className={cn("relative h-4 w-40 sm:w-56", draft === null && "opacity-50 hover:opacity-80")} data-testid="cell-confidence-track">
+							<div
+								aria-hidden
+								className="pointer-events-none absolute top-1/2 left-2 right-2 h-1.5 -translate-y-1/2 rounded-full border border-border"
+								style={confidenceRailStyle(draft === null ? 0 : shown)}
+							/>
+							<input
+								type="range"
+								min={0}
+								max={100}
+								step={1}
+								value={shown}
+								aria-label="Confidence that you understand this cell"
+								aria-valuetext={draft === null ? "not rated" : `${shown} percent`}
+								title="How sure are you that you understand this cell? 0% explains the prerequisites. ←/→ on a focused cell."
+								data-testid="cell-confidence"
+								// Unrated: the first click on the rail rates it, even at the resting 50.
+								onPointerDown={() => draft === null && change(50)}
+								onChange={(e) => change(snapConfidence(Number(e.target.value)))}
+								// The notebook's ←/→ owns stepping on a focused cell; on the slider itself too.
+								onKeyDown={(e) => (e.key === "ArrowLeft" || e.key === "ArrowRight") && e.preventDefault()}
+								style={{ color: color ?? "var(--muted-foreground)" }}
 								className={cn(
-									"rounded-full border px-2 py-0.5 transition-colors",
-									u?.level === level ? TONE[level] : "border-border/70 hover:border-border hover:text-foreground",
-									u?.level === level && stale && "opacity-60",
+									"absolute inset-0 h-4 w-full cursor-pointer appearance-none bg-transparent outline-none",
+									"[&::-webkit-slider-runnable-track]:h-4 [&::-webkit-slider-runnable-track]:bg-transparent",
+									"[&::-webkit-slider-thumb]:size-4 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-current",
+									"[&::-moz-range-track]:h-4 [&::-moz-range-track]:bg-transparent",
+									"[&::-moz-range-thumb]:size-4 [&::-moz-range-thumb]:appearance-none [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-current",
 								)}
-							>
-								{SHORT[level]}
+							/>
+						</div>
+						<span data-testid="cell-confidence-value" className={cn("w-9 shrink-0 text-right font-mono tabular-nums", stale && "opacity-60")} style={{ color }}>
+							{draft === null ? "—" : `${shown}%`}
+						</span>
+						{u && (
+							<button type="button" data-testid="cell-confidence-clear" onClick={() => onRate(null)} title="Clear the rating" className="rounded px-1 hover:bg-accent hover:text-foreground">
+								clear
 							</button>
-						))}
+						)}
 						{u && stale && <span className="italic">text changed since you rated it</span>}
 						{u && (
 							<button

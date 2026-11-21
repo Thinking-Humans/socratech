@@ -96,6 +96,8 @@ export interface Journal {
 	/** The notebook's contribution to the graph (owner, 2026-11-15: the
 	 *  notebook — not the cell — is the graph's unit). Absent = never read. */
 	graph?: CellGraphState;
+	/** Where its code runs (an accelerator id — Settings → Accelerators); absent = this machine. */
+	accelerator?: string;
 	createdAt: string;
 	updatedAt: string;
 }
@@ -133,6 +135,10 @@ export interface PublishPlan {
 	/** Bundle directory relative to the site repo, e.g. "content/posts/2026-11-15-slug". */
 	dir: string | null;
 	files: { name: string; status: PlannedFileStatus; content?: string }[];
+	/** A site config file the publish patches and commits with the bundle
+	 *  (name relative to the site repo), e.g. hugo.toml gaining the mounts
+	 *  that serve media/*.html as static files (server/site-config.ts). */
+	siteConfig?: { name: string; status: "changed"; content: string };
 	republish: boolean;
 	branch: string | null;
 	remote: string | null;
@@ -180,7 +186,13 @@ export interface UnderstandingCheck {
 }
 
 export interface CellUnderstanding {
+	/** Derived from `confidence` (levelForConfidence); kept for the prerequisite
+	 *  and cross-check logic. Ratings before 2026-11-21 carry only this. */
 	level: UnderstandingLevel;
+	/** The learner's confidence they understand the cell, a CONFIDENCE_STOPS
+	 *  value 0–100 (owner, 2026-11-21: replaces own / helped / stuck buttons).
+	 *  Absent on older ratings → cellConfidence() maps the level. */
+	confidence?: number;
 	/** textHash of the cell's source when rated. */
 	hash: string;
 	at: string;

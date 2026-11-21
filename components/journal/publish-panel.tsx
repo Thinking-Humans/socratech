@@ -10,7 +10,8 @@
 
 import { useEffect, useState } from "react";
 import { journalApi, type PublishPlan, type PublishResult } from "@/components/journal/journal-api";
-import { cn } from "@/lib/utils";
+import { cn, formatWhen } from "@/lib/utils";
+import type { JournalPublication } from "@/src/core";
 
 const STATUS_TONE: Record<PublishPlan["files"][number]["status"], string> = {
 	new: "text-primary",
@@ -33,6 +34,7 @@ export function PublishPanel({
 	journalId,
 	mode,
 	revision,
+	lastPublished,
 	onClose,
 	onPublished,
 }: {
@@ -40,6 +42,8 @@ export function PublishPanel({
 	mode: "preview" | "publish";
 	/** Bumps when the journal changed — the plan is re-fetched. */
 	revision: string;
+	/** The latest publication, if any — shown so a republish knows what it replaces. */
+	lastPublished?: JournalPublication;
 	onClose: () => void;
 	onPublished: (r: PublishResult) => void;
 }) {
@@ -63,10 +67,24 @@ export function PublishPanel({
 	if (!plan) return <p className="text-xs text-muted-foreground">Preparing…</p>;
 
 	const index = plan.files.find((f) => f.name === "index.md");
-	const nothingToDo = plan.files.length > 0 && plan.files.every((f) => f.status === "unchanged");
+	const nothingToDo = plan.files.length > 0 && plan.files.every((f) => f.status === "unchanged") && !plan.siteConfig;
 
 	return (
 		<div className="flex flex-col gap-3" data-testid={mode === "publish" ? "journal-publish-panel" : "journal-preview"}>
+			{lastPublished && !result && (
+				<p className="text-xs text-muted-foreground" data-testid="journal-last-published">
+					Last published <span className="text-foreground">{formatWhen(lastPublished.at)}</span>
+					{lastPublished.commit && <span className="font-mono"> · {lastPublished.commit.slice(0, 7)}</span>}
+					{lastPublished.url && (
+						<>
+							{" · "}
+							<a href={lastPublished.url} target="_blank" rel="noreferrer" className="underline">
+								view
+							</a>
+						</>
+					)}
+				</p>
+			)}
 			{plan.target && plan.dir && (
 				<div className="flex flex-col gap-1 rounded-md border border-border p-3 text-xs">
 					<div>
@@ -82,6 +100,15 @@ export function PublishPanel({
 							</span>
 						))}
 					</div>
+					{plan.siteConfig && (
+						<div data-testid="journal-publish-site-config">
+							<span className="text-muted-foreground">Site config </span>
+							<span className={cn("font-mono", STATUS_TONE[plan.siteConfig.status])}>
+								{plan.siteConfig.name} ({plan.siteConfig.status})
+							</span>
+							<span className="text-muted-foreground"> — serves media/*.html as static files</span>
+						</div>
+					)}
 					<div>
 						<span className="text-muted-foreground">Commit </span>
 						<span className="font-mono">{plan.commitMessage.split("\n")[0]}</span>
@@ -108,7 +135,7 @@ export function PublishPanel({
 			{plan.blockers.length > 0 && (
 				<ul className="flex flex-col gap-1 text-xs text-destructive" role="alert" data-testid="journal-publish-blockers">
 					{plan.blockers.map((b) => (
-						<li key={b}>{b}</li>
+						<li key={b} className="whitespace-pre-wrap">{b}</li>
 					))}
 				</ul>
 			)}

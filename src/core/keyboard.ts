@@ -52,14 +52,16 @@ export type KeyAction =
 	| "journal-edit-cell"
 	| "journal-next-cell"
 	| "journal-prev-cell"
+	| "journal-move-cell-down"
+	| "journal-move-cell-up"
 	| "journal-inline"
 	| "journal-inline-insert"
 	| "journal-inline-explain"
-	| "journal-rate-own"
-	| "journal-rate-helped"
-	| "journal-rate-stuck"
+	| "journal-confidence-down"
+	| "journal-confidence-up"
 	| "journal-extract-cell"
 	| "journal-flashcards"
+	| "journal-visualize"
 	| "journal-delete-cell"
 	| "journal-undo"
 	| "journal-redo";
@@ -143,6 +145,8 @@ export const KEYBOARD_ACTIONS: readonly KeyActionDef[] = [
 	{ id: "journal-edit-cell", label: "Edit the focused cell", scope: "journal", binding: "enter", surfaceOwned: true },
 	{ id: "journal-next-cell", label: "Next cell", scope: "journal", binding: "arrowdown", surfaceOwned: true },
 	{ id: "journal-prev-cell", label: "Previous cell", scope: "journal", binding: "arrowup", surfaceOwned: true },
+	{ id: "journal-move-cell-down", label: "Move the focused cell down", scope: "journal", binding: "shift+arrowdown", surfaceOwned: true },
+	{ id: "journal-move-cell-up", label: "Move the focused cell up", scope: "journal", binding: "shift+arrowup", surfaceOwned: true },
 	// Inline ask while editing (owner, 2026-11-15): Mod+L starts the chord,
 	// then I inserts an answer / E explains the highlighted text in a small
 	// box (the second key works with or without Mod). Any other key opens the
@@ -151,13 +155,16 @@ export const KEYBOARD_ACTIONS: readonly KeyActionDef[] = [
 	{ id: "journal-inline-insert", label: "… then: insert the answer into the cell", scope: "journal", binding: "i", surfaceOwned: true },
 	{ id: "journal-inline-explain", label: "… then: explain it in the box", scope: "journal", binding: "e", surfaceOwned: true },
 	// Rating + graph on the focused cell (command mode).
-	{ id: "journal-rate-own", label: "Rate the focused cell: did it on my own", scope: "journal", binding: "1", surfaceOwned: true },
-	{ id: "journal-rate-helped", label: "Rate: did it with help", scope: "journal", binding: "2", surfaceOwned: true },
-	{ id: "journal-rate-stuck", label: "Rate: couldn't understand, even with help (explains prerequisites)", scope: "journal", binding: "3", surfaceOwned: true },
+	// Confidence slider (owner, 2026-11-21) — the quiz dock's ←/→ on the focused cell.
+	{ id: "journal-confidence-down", label: "Focused cell: lower your confidence (0% explains prerequisites)", scope: "journal", binding: "arrowleft", surfaceOwned: true },
+	{ id: "journal-confidence-up", label: "Focused cell: raise your confidence", scope: "journal", binding: "arrowright", surfaceOwned: true },
 	{ id: "journal-extract-cell", label: "Read the notebook into the graph", scope: "journal", binding: "g", surfaceOwned: true },
 	// Flashcards from the focused cell (owner, 2026-11-17): the agent drafts,
 	// the learner edits and picks the deck.
 	{ id: "journal-flashcards", label: "Make flashcards from the focused cell", scope: "journal", binding: "f", surfaceOwned: true },
+	// 3b1b-style interactive visual of the focused cell (owner, 2026-11-21),
+	// inserted as the next cell.
+	{ id: "journal-visualize", label: "Visualize the focused cell (3b1b-style, next cell)", scope: "journal", binding: "v", surfaceOwned: true },
 	// Esc then D deletes; undo/redo cover cell edits, adds, deletes and moves.
 	// In edit mode the text box's own undo goes first; once it has nothing
 	// left, the same key falls through to the notebook's.

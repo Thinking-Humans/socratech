@@ -15,7 +15,7 @@ import { CLIP_EXERCISE_SYSTEM_PROMPT, clipExercisePrompt, pageToCells, parseClip
 import { safeFetch } from "../agent/tools/safe-fetch.ts";
 import { addJournalCell, newCellId, newJournalId } from "./journals.ts";
 import { resolveRoleSpec } from "../core/settings-resolution.ts";
-import { strongTextStream } from "./notes-ask.ts";
+import { strongTextStream } from "./model-text.ts";
 import { stores } from "./stores.ts";
 
 /** Largest page accepted (characters of html or markdown). */

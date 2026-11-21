@@ -62,6 +62,8 @@ describe("SettingsDialog (the designed surface, SSR)", () => {
 			["keyboard", "Keyboard", "keyboard"],
 			["claude", "Claude", "sparkles"],
 			["publishing", "Publishing", "send"],
+			["notebook-video", "Notebook video", "clapperboard"],
+			["accelerators", "Accelerators", "cpu"],
 			["brain", "Second brain", "brain"],
 			["general", "General", "settings"],
 			["core-plugins", "Core plugins", "plug"],

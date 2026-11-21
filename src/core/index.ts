@@ -32,10 +32,11 @@ export * from "./journal-search.ts";
 export * from "./notebook-switch.ts";
 export * from "./journal-media.ts";
 export * from "./notebook-learning.ts";
+export * from "./notebook-video.ts";
+export * from "./accelerators.ts";
 export * from "./notebook-from-graph.ts";
 // marimo-format.ts (2026-11-15): notebooks stored as marimo .py + sidecar.
 export * from "./marimo-format.ts";
-export * from "./notes.ts";
 // brain.ts (brain store, 2026-11-15): pure parse/search/bundle/consolidation ops.
 export * from "./brain.ts";
 export * from "./source-organization.ts";

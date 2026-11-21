@@ -158,10 +158,11 @@ export function Home({
 		setBusy(true);
 		setStartError(false);
 		try {
-			// Notebooks are the unit of execution (owner, 2026-11-15): in the
-			// notebook app, Teach / Practice open a NEW NOTEBOOK seeded from the
-			// topic + picks (core/notebook-from-graph.ts) instead of a session.
-			if (JOURNAL_ONLY) {
+			// Notebooks are the unit of execution (owner, 2026-11-15): Teach /
+			// Practice open a NEW NOTEBOOK seeded from the topic + picks
+			// (core/notebook-from-graph.ts) instead of a session — still so with
+			// sessions back on (2026-11-21); Improvise has no notebook form.
+			if (mode === "teach" || mode === "practice") {
 				const { journal, runCellId } = await journalApi.launchFromGraph({
 					mode: mode === "practice" ? "practice" : "teach",
 					topic: t,
@@ -177,7 +178,7 @@ export function Home({
 			// chains among them); the prompt stays the learner's own words.
 			const target = await starterRef.current.start({
 				title: t,
-				...(mode !== "teach" ? { kind: mode } : {}),
+				kind: mode,
 				...(practiceProps.length > 0 ? { graphContext: { propositions: practiceProps } } : {}),
 			}, fetch, JSON.stringify(catalog?.slots.strong));
 			router.push(target);

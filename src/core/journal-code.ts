@@ -255,6 +255,34 @@ export function flashcardDraftPrompt(journal: Journal, cellId: string): string {
 }
 
 /**
+ * V on a cell (owner, 2026-11-21): the brief for a 3b1b-style interactive
+ * visual of the focus cell. The demo builder never sees the notebook — this
+ * brief is everything it knows, so the focus cell goes in whole and its
+ * neighbours as context.
+ */
+export function visualizeBrief(journal: Journal, cellId: string): { title: string; brief: string } {
+	const at = cellIndex(journal, cellId);
+	const cell = journal.cells[at]!;
+	const text = flashcardSourceText(cell) ?? "";
+	const { before, after } = contextAround(journal, at);
+	// First meaningful line of the cell, stripped of markdown markers.
+	const head = text.split("\n").map((l) => l.replace(/^[#>*\-\s`]+|[`*_$]+/g, "").trim()).find((l) => l.length > 2) ?? journal.title;
+	const title = head.length > 60 ? `${head.slice(0, 57).trimEnd()}…` : head;
+	const brief = [
+		`A learner is studying this in their notebook "${journal.title}" and wants to build intuition for it.`,
+		"Make a 3Blue1Brown-style interactive visual explanation of the FOCUS CELL's idea — the picture that makes it obvious.",
+		"Use the other cells only to understand what the learner already knows and the notation they use.",
+		before.length ? `Cells before (context):\n\n${before.join("\n\n")}` : "",
+		cellBlock(cell, "FOCUS CELL", OUTPUT_CAP * 4),
+		cell.role === "agent" && cell.output?.trim() ? `Agent answer in the focus cell:\n"""\n${clip(cell.output, OUTPUT_CAP * 4)}\n"""` : "",
+		after.length ? `Cells after (context):\n\n${after.join("\n\n")}` : "",
+	]
+		.filter(Boolean)
+		.join("\n\n");
+	return { title, brief };
+}
+
+/**
  * The model's reply → drafts. Tolerates a code fence or prose around the
  * array; drops entries missing a question or an answer; a missing name
  * falls back to the start of the question. Throws when no card survives.

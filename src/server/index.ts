@@ -19,14 +19,17 @@ export { prepareSubmissionImages, prepareSubmissionImageChannels } from "./submi
 export * from "./stores.ts";
 export * from "./journals.ts";
 export * from "./journal-media.ts";
+export * from "./journal-visualize.ts";
+export * from "./notebook-video.ts";
+export * from "./youtube.ts";
+export * from "./accelerators.ts";
 export * from "./scratchpad.ts";
 export * from "./notebook-learning.ts";
 export * from "./notebook-from-graph.ts";
 // The API gate, for the routes proxy.ts exempts (they enforce it in-handler).
 export { apiRequestRefusal } from "./desktop-access.ts";
 export * from "./publish.ts";
-export * from "./notes.ts";
-export * from "./notes-ask.ts";
+export * from "./model-text.ts";
 export * from "./brain.ts";
 export { refreshWorkerRequestAdmission } from "../agent/worker-request-admission.ts";
 export { readRenderSettings, writeRenderSettings } from "../store/render-settings.ts";

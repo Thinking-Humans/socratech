@@ -19,8 +19,7 @@ import {
 } from "../core/notebook-from-graph.ts";
 import type { Journal } from "../core/contracts/journal.ts";
 import { addJournalCell, createJournal } from "./journals.ts";
-import { NoteError } from "./notes.ts";
-import { strongTextStream } from "./notes-ask.ts";
+import { ModelTextError, strongTextStream } from "./model-text.ts";
 
 type ExerciseWriter = (system: string, prompt: string) => Promise<string>;
 
@@ -49,7 +48,7 @@ async function writeExercises(input: NotebookLaunchInput): Promise<string[] | nu
 			: await readAll(strongTextStream(PRACTICE_SYSTEM_PROMPT, prompt, "notebook-practice"));
 		return parsePracticeExercises(reply);
 	} catch (err) {
-		if (err instanceof NoteError) throw new JournalError(err.message, "invalid");
+		if (err instanceof ModelTextError) throw new JournalError(err.message, "invalid");
 		console.info(`[notebook launch] exercises not written up front: ${err instanceof Error ? err.message : String(err)}`);
 		return null;
 	}

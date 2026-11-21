@@ -14,17 +14,20 @@
  * `journals-changed` refetches when another writer touched it.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { CheckCircle2Icon, CodeIcon, LoaderCircleIcon, NetworkIcon, MessageSquareQuoteIcon, NotebookPenIcon, PenLineIcon, PlayIcon, PlusIcon, RotateCcwIcon, SendIcon, SparklesIcon } from "lucide-react";
-import { askAnswerCell, flashcardSourceText, bindingForAction, eventMatchesAction, formatBinding, isTypingSurface, notebookGraphStatus, runnableLang, type CellPatch, type Journal, type JournalCell, type JournalCellRole, type KeyAction, type UnderstandingLevel } from "@/src/core";
+import { RATEABLE_ROLES, askAnswerCell, cellConfidence, flashcardSourceText, stepConfidence, bindingForAction, eventMatchesAction, formatBinding, isTypingSurface, notebookGraphStatus, runnableLang, type CellPatch, type Journal, type JournalCell, type JournalCellRole, type KeyAction } from "@/src/core";
 import { useServerEvent } from "@/components/server-events";
 import { JournalApiError, journalApi } from "@/components/journal/journal-api";
 import { JOURNAL_ASK_SELECTION_EVENT, JournalCellView, selectedCellText } from "@/components/journal/journal-cell";
 import { CellFlashcards } from "@/components/journal/cell-flashcards";
+import { NotebookVideoPanel } from "@/components/journal/notebook-video-panel";
 import { cachedJournal, rememberJournal } from "@/components/journal/journal-cache";
 import { PublishPanel } from "@/components/journal/publish-panel";
+import { ComputeBar } from "@/components/journal/compute-bar";
+import { useKernelStatus } from "@/components/journal/kernel-status";
 import { JOURNAL_FOCUS_CELL_EVENT } from "@/components/journal/search-everything";
-import { cn } from "@/lib/utils";
+import { cn, formatWhen } from "@/lib/utils";
 
 const today = () => new Date().toISOString().slice(0, 10);
 
@@ -74,8 +77,13 @@ export function JournalView({
 	const [panel, setPanel] = useState<"preview" | "publish" | null>(null);
 	/** Cells with a run in flight. */
 	const [running, setRunning] = useState<ReadonlySet<string>>(() => new Set());
+	/** The kernel: where it runs, connecting / running + the running cell's live output. */
+	const { kernel, refresh: refreshKernel } = useKernelStatus(journal?.id, running.size > 0);
 	/** Cell id → the /ask streaming under it. */
 	const [asking, setAsking] = useState<Record<string, { question: string; text: string }>>({});
+	/** Visuals being built (V): source cell → latest progress line. */
+	const [visualizing, setVisualizing] = useState<Record<string, string>>({});
+	const visualAborts = useRef(new Map<string, AbortController>());
 	const [notice, setNotice] = useState<string | null>(null);
 	/** The cell whose flashcards dialog is open (F). */
 	const [cardsFor, setCardsFor] = useState<string | null>(null);
@@ -100,6 +108,16 @@ export function JournalView({
 			if (err instanceof JournalApiError && err.status === 404) setJournal(null);
 		}
 	}, [chatId, journalId]);
+
+	// A run this view didn't start (before a reload / a notebook switch) finished on the
+	// server: its output was saved there — fetch the notebook to show it.
+	const serverRunning = kernel?.running?.cellId;
+	const lastServerRunning = useRef<string | undefined>(undefined);
+	useEffect(() => {
+		const prev = lastServerRunning.current;
+		lastServerRunning.current = serverRunning;
+		if (prev && prev !== serverRunning && !running.has(prev)) void load();
+	}, [serverRunning, running, load]);
 
 	useEffect(() => {
 		const cached = journalId ? cachedJournal(journalId) : undefined;
@@ -192,13 +210,13 @@ export function JournalView({
 	/** The notebook is being read into the graph. */
 	const [extracting, setExtracting] = useState(false);
 
-	/** Rate a cell; "stuck" runs the prerequisites agent cell placed above it
-	 *  and moves focus up to it (owner, 2026-11-17). */
+	/** Rate a cell's confidence; 0% runs the prerequisites agent cell placed
+	 *  above it and moves focus up to it (owner, 2026-11-17 / 11-21). */
 	const rateCell = useCallback(
-		async (cellId: string, level: UnderstandingLevel | null) => {
+		async (cellId: string, confidence: number | null) => {
 			if (!journalIdNow) return;
 			try {
-				const { journal: next, prereqCellId } = await journalApi.rateCell(journalIdNow, cellId, level);
+				const { journal: next, prereqCellId } = await journalApi.rateCell(journalIdNow, cellId, confidence);
 				setJournal(next);
 				setError(null);
 				const prereq = prereqCellId ? next.cells.find((c) => c.id === prereqCellId) : undefined;
@@ -267,12 +285,13 @@ export function JournalView({
 		if (!journalIdNow) return;
 		try {
 			await journalApi.restartKernel(journalIdNow);
+			void refreshKernel();
 			setNotice("Python restarted — variables cleared.");
 			setTimeout(() => setNotice(null), 4000);
 		} catch (err) {
 			setError(err instanceof Error ? err.message : String(err));
 		}
-	}, [journalIdNow]);
+	}, [journalIdNow, refreshKernel]);
 
 	// ── Undo / redo (cell edits, adds, deletes, moves) ─────────────────────────
 	// Client-side and per notebook: each step is its own inverse operation on
@@ -418,6 +437,31 @@ export function JournalView({
 		[flash],
 	);
 
+	/** V / the shapes button: a 3b1b-style visual of the cell, built into a new
+	 *  cell right below it. Progress shows in that slot meanwhile; cancellable. */
+	const visualizeCell = useCallback(
+		async (cellId: string) => {
+			const id = journalRef.current?.id;
+			const cell = journalRef.current?.cells.find((c) => c.id === cellId);
+			if (!id || !cell || visualAborts.current.has(cellId)) return;
+			if (flashcardSourceText(cell) === null) return flash("The cell is empty — nothing to visualize.", 3000);
+			const ctrl = new AbortController();
+			visualAborts.current.set(cellId, ctrl);
+			setVisualizing((v) => ({ ...v, [cellId]: "starting" }));
+			try {
+				const newId = await journalApi.visualize(id, cellId, (line) => setVisualizing((v) => (cellId in v ? { ...v, [cellId]: line } : v)), ctrl.signal);
+				await load();
+				if (newId) requestAnimationFrame(() => document.getElementById(`cell-${newId}`)?.scrollIntoView({ block: "nearest", behavior: "smooth" }));
+			} catch (err) {
+				if (!ctrl.signal.aborted) flash(`Visual failed: ${err instanceof Error ? err.message : String(err)}`, 8000);
+			} finally {
+				visualAborts.current.delete(cellId);
+				setVisualizing(({ [cellId]: _, ...rest }) => rest);
+			}
+		},
+		[flash, load],
+	);
+
 	// A fresh notebook is one empty markdown cell: open straight into editing it.
 	const autoEditedRef = useRef<string | null>(null);
 	useEffect(() => {
@@ -473,8 +517,8 @@ export function JournalView({
 	//   (in edit mode Mod+L is the cell's inline ask)
 	//   Esc on a focused cell → scroll mode (the container takes focus)
 	//   Tab → the top cell · ↑/↓ → previous / next cell
-	const keysRef = useRef({ cells: [] as string[], editingId: null as string | null, addCell, rateCell, extractNotebook, deleteCell, travel, openFlashcards });
-	keysRef.current = { cells: journal?.cells.map((c) => c.id) ?? [], editingId, addCell, rateCell, extractNotebook, deleteCell, travel, openFlashcards };
+	const keysRef = useRef({ cells: [] as string[], editingId: null as string | null, addCell, rateCell, extractNotebook, deleteCell, travel, openFlashcards, visualizeCell, moveCellTo });
+	keysRef.current = { cells: journal?.cells.map((c) => c.id) ?? [], editingId, addCell, rateCell, extractNotebook, deleteCell, travel, openFlashcards, visualizeCell, moveCellTo };
 	useEffect(() => {
 		if (!loaded) return;
 		const onKey = (e: KeyboardEvent) => {
@@ -533,17 +577,16 @@ export function JournalView({
 				return;
 			}
 			if (onCellRoot && cellId) {
-				const rate: UnderstandingLevel | null = eventMatchesAction(e, "journal-rate-own")
-					? "own"
-					: eventMatchesAction(e, "journal-rate-helped")
-						? "helped"
-						: eventMatchesAction(e, "journal-rate-stuck")
-							? "stuck"
-							: null;
-				if (rate) {
-					claim();
-					void keysRef.current.rateCell(cellId, rate);
-					return;
+				const dir = eventMatchesAction(e, "journal-confidence-down") ? -1 : eventMatchesAction(e, "journal-confidence-up") ? 1 : 0;
+				if (dir) {
+					const cell = journalRef.current?.cells.find((c) => c.id === cellId);
+					if (cell && RATEABLE_ROLES.includes(cell.role)) {
+						claim();
+						const now = cell.understanding ? cellConfidence(cell.understanding) : null;
+						const next = stepConfidence(now, dir);
+						if (next !== now) void keysRef.current.rateCell(cellId, next);
+						return;
+					}
 				}
 				if (eventMatchesAction(e, "journal-extract-cell")) {
 					claim();
@@ -555,12 +598,25 @@ export function JournalView({
 					keysRef.current.openFlashcards(cellId);
 					return;
 				}
+				if (eventMatchesAction(e, "journal-visualize")) {
+					claim();
+					void keysRef.current.visualizeCell(cellId);
+					return;
+				}
 				if (eventMatchesAction(e, "journal-delete-cell")) {
 					claim();
 					void keysRef.current.deleteCell(cellId).then((nextId) => (nextId ? focusCell(nextId) : root.focus({ preventScroll: true })));
 					return;
 				}
 				const i = cells.indexOf(cellId);
+				const shift = eventMatchesAction(e, "journal-move-cell-down") ? 1 : eventMatchesAction(e, "journal-move-cell-up") ? -1 : 0;
+				if (shift) {
+					claim();
+					const to = i + shift;
+					// Keep the moved cell focused: React re-orders the DOM node, which can drop focus.
+					if (i >= 0 && to >= 0 && to < cells.length) void keysRef.current.moveCellTo(cellId, to).then(() => requestAnimationFrame(() => focusCell(cellId)));
+					return;
+				}
 				if (eventMatchesAction(e, "journal-next-cell") && i < cells.length - 1) {
 					claim();
 					focusCell(cells[i + 1]);
@@ -661,7 +717,7 @@ export function JournalView({
 						</span>
 						{published && (
 							<span data-testid="journal-published">
-								published {published.at.slice(0, 10)}
+								published {formatWhen(published.at)}
 								{published.url && (
 									<>
 										{" · "}
@@ -733,6 +789,7 @@ export function JournalView({
 						<button
 							type="button"
 							data-testid="journal-publish"
+							title={published ? `Last published ${formatWhen(published.at)}` : "Publish this notebook"}
 							onClick={() => setPanel((p) => (p === "publish" ? null : "publish"))}
 							className={cn(
 								"flex items-center gap-1 rounded-full border px-2 py-0.5 uppercase tracking-wide transition-colors",
@@ -743,6 +800,20 @@ export function JournalView({
 							{published ? "Republish" : "Publish"}
 						</button>
 					</div>
+					<ComputeBar
+						journalId={journal.id}
+						accelerator={journal.accelerator}
+						kernel={kernel}
+						refresh={refreshKernel}
+						onChange={async (accelerator) => {
+							const next = await run((j) => journalApi.patchMeta(j.id, { accelerator }));
+							if (next) {
+								void refreshKernel();
+								setNotice(accelerator ? "Switched machines — variables start fresh there." : "Back on this machine — variables start fresh.");
+								setTimeout(() => setNotice(null), 4000);
+							}
+						}}
+					/>
 					{error && (
 						<p className="text-xs text-destructive" role="alert">
 							{error}
@@ -761,6 +832,7 @@ export function JournalView({
 						journalId={journal.id}
 						mode={panel}
 						revision={journal.updatedAt}
+						lastPublished={published}
 						onClose={() => setPanel(null)}
 						onPublished={(r) => setJournal(r.journal)}
 					/>
@@ -770,8 +842,8 @@ export function JournalView({
 							<p className="text-sm text-muted-foreground">Empty notebook. Ctrl/⌘+M markdown · Ctrl/⌘+B code · Ctrl/⌘+L agent — Python and C++ run here; /ask in any cell.</p>
 						)}
 						{journal.cells.map((cell, i) => (
+							<Fragment key={cell.id}>
 							<JournalCellView
-								key={cell.id}
 								journalId={journal.id}
 								cell={cell}
 								index={i}
@@ -788,12 +860,27 @@ export function JournalView({
 								onAsk={(q) => askCell(cell.id, q)}
 								onSaveAside={(q, a) => void saveAside(cell.id, q, a)}
 								onFlashcards={() => openFlashcards(cell.id)}
-								running={running.has(cell.id)}
+								onVisualize={() => void visualizeCell(cell.id)}
+								visualizing={cell.id in visualizing}
+								running={running.has(cell.id) || serverRunning === cell.id}
+								live={kernel?.running?.cellId === cell.id ? { ...kernel.running, where: kernel.accelerator?.name } : undefined}
+								onStop={() => void journalApi.interruptKernel(journal.id).then(() => refreshKernel())}
 								asking={asking[cell.id] ?? null}
 								streaming={streaming[cell.id] ?? null}
 								onRate={(level) => void rateCell(cell.id, level)}
 								onJournal={setJournal}
 							/>
+							{cell.id in visualizing && (
+								<div className="flex items-center gap-2 rounded-lg border border-dashed border-primary/40 px-3 py-3 text-xs text-muted-foreground" data-testid="journal-visualizing">
+									<LoaderCircleIcon className="size-3.5 animate-spin text-primary" />
+									<span>Building a visual of the cell above — {visualizing[cell.id]}</span>
+									<span className="flex-1" />
+									<button type="button" onClick={() => visualAborts.current.get(cell.id)?.abort()} className="rounded px-1.5 py-0.5 hover:bg-accent hover:text-foreground">
+										Cancel
+									</button>
+								</div>
+							)}
+							</Fragment>
 						))}
 						<div className="flex flex-wrap gap-1.5 pt-2" data-testid="journal-add">
 							<AddButton icon={<CodeIcon className="size-3" />} label="Code" hint="journal-new-code" onClick={() => void addCell("code")} />
@@ -801,6 +888,7 @@ export function JournalView({
 							<AddButton icon={<SparklesIcon className="size-3" />} label="Agent" hint="journal-new-agent" onClick={() => void addCell("agent")} />
 							<AddButton icon={<MessageSquareQuoteIcon className="size-3" />} label="Aside" onClick={() => void addCell("aside")} />
 						</div>
+						{journal.cells.length > 0 && <NotebookVideoPanel key={journal.id} journalId={journal.id} title={journal.title} />}
 					</>
 				)}
 			</div>

@@ -395,7 +395,8 @@ function createWindow(url) {
 	// loopback-origin only — Electron's default is auto-approve-everything,
 	// and we do not ship that.
 	// "local-fonts": the appearance section's reading-font picker (2026-09-26).
-	const allowedPermissions = new Set(["media", "clipboard-sanitized-write", "local-fonts"]);
+	// "fullscreen": a notebook cell's fullscreen button (element.requestFullscreen).
+	const allowedPermissions = new Set(["media", "clipboard-sanitized-write", "local-fonts", "fullscreen"]);
 	const fromOwnOrigin = (origin, permission) =>
 		origin === allowedOrigin() && allowedPermissions.has(permission);
 	session.defaultSession.setPermissionRequestHandler((_wc, permission, callback, details) => {

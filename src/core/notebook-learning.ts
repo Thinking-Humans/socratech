@@ -15,12 +15,40 @@
 
 import type { Journal, JournalCell, UnderstandingCheck, UnderstandingLevel } from "./contracts/journal.ts";
 import { mediaEmbedLine } from "./journal-media.ts";
+import { CONFIDENCE_STOPS } from "./question-core.ts";
 
 export const UNDERSTANDING_LABEL: Readonly<Record<UnderstandingLevel, string>> = {
 	own: "Did it on my own",
 	helped: "Did it with help",
 	stuck: "Couldn't understand, even with help",
 };
+
+// Cell confidence (owner, 2026-11-21): the quiz slider's stops, rated per
+// cell. 0% is "couldn't understand it" → prerequisites get explained.
+
+/** Nearest stop to any 0–100 value. */
+export function snapConfidence(v: number): number {
+	return CONFIDENCE_STOPS.reduce((best, s) => (Math.abs(s - v) < Math.abs(best - v) ? s : best), 50);
+}
+
+export function levelForConfidence(confidence: number): UnderstandingLevel {
+	return confidence >= 70 ? "own" : confidence > 0 ? "helped" : "stuck";
+}
+
+/** Older level-only ratings, read as confidence. */
+const LEVEL_CONFIDENCE: Readonly<Record<UnderstandingLevel, number>> = { own: 90, helped: 50, stuck: 0 };
+
+/** A rating's confidence, old or new. */
+export function cellConfidence(u: { level: UnderstandingLevel; confidence?: number }): number {
+	return typeof u.confidence === "number" ? snapConfidence(u.confidence) : LEVEL_CONFIDENCE[u.level];
+}
+
+/** One step along the stops (←/→); unrated starts from 50. */
+export function stepConfidence(current: number | null, dir: -1 | 1): number {
+	if (current === null) return 50;
+	const i = CONFIDENCE_STOPS.indexOf(snapConfidence(current));
+	return CONFIDENCE_STOPS[Math.min(CONFIDENCE_STOPS.length - 1, Math.max(0, i + dir))]!;
+}
 
 /** A short, stable fingerprint of a cell's text (cyrb53, hex). Same in the
  *  browser and on the server — it only has to notice edits. */
@@ -128,8 +156,8 @@ function cellBlockFor(journal: Journal, cellId: string): { at: number; text: str
 
 export function checkQuestionPrompt(journal: Journal, cellId: string): string {
 	const { text } = cellBlockFor(journal, cellId);
-	const level = journal.cells.find((c) => c.id === cellId)?.understanding?.level;
-	return [`Notebook: ${journal.title}`, text, level ? `The learner rated it: ${UNDERSTANDING_LABEL[level]}.` : ""].filter(Boolean).join("\n\n");
+	const u = journal.cells.find((c) => c.id === cellId)?.understanding;
+	return [`Notebook: ${journal.title}`, text, u ? `The learner's confidence that they understand it: ${cellConfidence(u)}%.` : ""].filter(Boolean).join("\n\n");
 }
 
 export function checkGradePrompt(journal: Journal, cellId: string, question: string, answer: string): string {

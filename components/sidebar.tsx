@@ -2,7 +2,6 @@
 
 import { JournalsSection } from "@/components/journal/journals-section";
 import { JOURNAL_ONLY } from "@/components/journal/journal-only";
-import { NotesSection } from "@/components/notes/notes-section";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -712,9 +711,6 @@ function SessionsSidebar() {
 					</Hint>
 				</div>
 
-				{/* Notes first (2026-11-15): Today / Graph / the vault, above the session doors. */}
-				{!JOURNAL_ONLY && <NotesSection />}
-
 				{/* Journal-only: no core doors, but an enabled plugin's own door
 				    (Flashcards: its library and review) still shows. */}
 				{JOURNAL_ONLY && <PluginSidebarActions>{null}</PluginSidebarActions>}
@@ -889,24 +885,22 @@ function SessionsSidebar() {
 					    list, above the background agents. */}
 					{/* The learning graph (owner, 2026-11-15): notebooks feed it and
 					    launch from it — its door sits right above them. */}
-					{JOURNAL_ONLY && (
-						<div className="px-3 pt-2">
-							<Hint label="Graph" action="jump-graph" side="right">
-								<Link
-									href="/graph"
-									data-testid="sidebar-graph"
-									aria-current={pathname === "/graph" ? "page" : undefined}
-									className={cn(
-										"flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs uppercase tracking-wider text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
-										pathname === "/graph" && "bg-accent text-foreground",
-									)}
-								>
-									<WaypointsIcon className="size-3.5" />
-									Graph
-								</Link>
-							</Hint>
-						</div>
-					)}
+					<div className="px-3 pt-2">
+						<Hint label="Graph" action="jump-graph" side="right">
+							<Link
+								href="/graph"
+								data-testid="sidebar-graph"
+								aria-current={pathname === "/graph" ? "page" : undefined}
+								className={cn(
+									"flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs uppercase tracking-wider text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
+									pathname === "/graph" && "bg-accent text-foreground",
+								)}
+							>
+								<WaypointsIcon className="size-3.5" />
+								Graph
+							</Link>
+						</Hint>
+					</div>
 					<JournalsSection fill={JOURNAL_ONLY} />
 
 					{!JOURNAL_ONLY && <ActivitySection />}

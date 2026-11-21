@@ -153,6 +153,17 @@ describe("media embeds", () => {
 			'Look:\n<video controls preload="metadata" src="media/v-2.mp4" aria-label="a &quot;clip&quot;"></video>\n![p](media/p-1.png)',
 		);
 	});
+	it("generated visuals (.html): embeddable and published as sandboxed iframes, never uploadable", () => {
+		assert.equal(media.isSafeMediaName("derivative-ab12cd.html"), true);
+		assert.equal(media.isMediaName("page.html"), false, "uploads stay images / videos");
+		assert.equal(media.MEDIA_ACCEPT.includes(".html"), false);
+		assert.deepEqual(media.mediaEmbedLine("![Derivative](media/derivative-ab12cd.html)"), { alt: "Derivative", name: "derivative-ab12cd.html", kind: "visual" });
+		assert.deepEqual(media.mediaRefs("![d](media/derivative-ab12cd.html)"), ["derivative-ab12cd.html"]);
+		assert.equal(
+			media.publishedMediaMarkdown('![a "b"](media/d-1.html)'),
+			'<iframe src="media/d-1.html" sandbox="allow-scripts" loading="lazy" title="a &quot;b&quot;" style="width:100%;height:36rem;border:0;border-radius:8px"></iframe>',
+		);
+	});
 	it("export lists only media of published, non-code cells", () => {
 		const j = journal("jrnl_m", "Media", [
 			{ id: "r", role: "reflection", source: "![p](media/p-1.png)\n![v](media/v-2.mp4)" },
